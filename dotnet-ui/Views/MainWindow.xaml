@@ -1,0 +1,128 @@
+<Window x:Class="PathwinderMgt.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Pathwinder 管理器" Height="680" Width="1000" MinWidth="1000" MinHeight="680"
+        Icon="pack://application:,,,/app.ico"
+        Background="#F5F6F8"
+        AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver"
+        WindowStartupLocation="CenterScreen" FontFamily="Microsoft YaHei" FontSize="13">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 顶部标题栏 -->
+        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="16,12">
+            <DockPanel LastChildFill="False">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Pathwinder 管理器" FontSize="18" FontWeight="SemiBold" Foreground="#111827"/>
+                    <TextBlock Text="导入 .lnk 快捷方式或 .exe，即可添加 Pathwinder 重定向能力"
+                               Foreground="#6B7280" Margin="16,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Style="{StaticResource ToolbarBtn}" Content="管理员启动" Click="BtnRunAsAdmin_Click" x:Name="BtnRunAsAdmin"/>
+                    <Button Style="{StaticResource ToolbarBtn}" Content="日志" Click="BtnOpenLogs_Click"/>
+                    <Button Style="{StaticResource ToolbarBtn}" Content="说明" Click="BtnAbout_Click"/>
+                    <Button Style="{StaticResource ToolbarBtn}" Content="刷新" Click="BtnRefresh_Click"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- 工具栏 -->
+        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="16,8">
+            <StackPanel Orientation="Horizontal">
+                <Button Style="{StaticResource PrimaryBtn}" Content="浏览" Click="BtnAddFiles_Click"/>
+                <Button Style="{StaticResource PrimaryBtn}" Content="全部添加" Click="BtnAddAll_Click"/>
+                <Button Style="{StaticResource ToolbarBtn}" Content="全部移除" Click="BtnRemoveAll_Click"/>
+                <Button Style="{StaticResource DangerBtn}" Content="全部删除" Click="BtnDeleteAll_Click"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 列表区 -->
+        <Border Grid.Row="2" Padding="16" Background="#F5F6F8">
+            <Border Background="#FFFFFF" CornerRadius="6" BorderBrush="#E5E7EB" BorderThickness="1" ClipToBounds="True">
+                <ListView Name="LvPrograms" Background="Transparent" BorderThickness="0"
+                          MouseDoubleClick="LvPrograms_MouseDoubleClick"
+                          GridViewColumnHeader.Click="ColHeader_Click"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="12,8"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="BorderBrush" Value="#F1F2F4"/>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn x:Name="ColOp" Header="操作" Width="Auto">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <!-- 添加/移除指令互斥：按状态只显示其中一个 -->
+                                            <Button Style="{StaticResource RowBtn}" Content="详情"
+                                                    Click="BtnDetail_Click" Tag="{Binding}"/>
+                                            <Button Style="{StaticResource PrimaryRowBtn}" Content="添加指令"
+                                                    Click="BtnAddOne_Click" Tag="{Binding}"
+                                                    IsEnabled="{Binding CanAdd}"
+                                                    Visibility="{Binding CanAdd, Converter={StaticResource BoolToVis}}"/>
+                                            <Button Style="{StaticResource RowBtn}" Content="移除指令"
+                                                    Click="BtnRemoveOne_Click" Tag="{Binding}"
+                                                    IsEnabled="{Binding CanRemove}"
+                                                    Visibility="{Binding CanRemove, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn x:Name="ColStatus" Header="状态" Width="Auto">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="10" Padding="8,2" HorizontalAlignment="Left"
+                                                Background="{Binding StatusBg}">
+                                            <TextBlock Text="{Binding Status}" Foreground="{Binding StatusFg}" FontSize="11"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn x:Name="ColDisplay" Header="显示名" Width="Auto" DisplayMemberBinding="{Binding DisplayName}"/>
+                            <GridViewColumn x:Name="ColArch" Header="架构" Width="Auto">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Architecture}"
+                                                   Foreground="{Binding ArchitectureFg}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn x:Name="ColPath" Header="原 exe 路径" Width="Auto">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding OriginalTarget}" MaxWidth="420"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding OriginalTarget}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </Border>
+        </Border>
+
+        <!-- 状态栏 -->
+        <Border Grid.Row="3" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0" Padding="16,6">
+            <DockPanel>
+                <TextBlock Name="StatusText" Foreground="#6B7280" VerticalAlignment="Center"/>
+                <TextBlock Name="CleanupText" DockPanel.Dock="Right" HorizontalAlignment="Right"
+                           Foreground="#9CA3AF" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

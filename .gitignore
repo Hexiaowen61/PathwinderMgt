@@ -362,3 +362,10 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+### 忽略所有 obj 和 bin 文件夹（包括子目录） ###
+**/obj/
+**/bin/
+**/out/
+**/publish/
+**/Output/

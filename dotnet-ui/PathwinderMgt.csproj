@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>PathwinderManager</AssemblyName>
+    <RootNamespace>PathwinderMgt</RootNamespace>
+    <!-- 程序集版本（关于窗口显示）：与 Inno Setup.iss 的 AppVersion 保持一致 -->
+    <Version>1.0.1</Version>
+    <!-- exe 文件图标（资源管理器/任务栏/安装包卸载入口显示的就是它） -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 以 Resource 嵌入，供窗口标题栏 Icon 使用 -->
+    <Resource Include="app.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      resources 下其他文件（解压目录等）不进入输出；仅随程序分发两个 zip 原件：
+      运行时 PayloadManager.EnsurePayload 检测 payload\ 缺文件时直接从 zip 解压恢复，
+      version.json 由启动时 RewriteVersionFromResources 按 zip 名生成。
+    -->
+    <None Remove="resources\**" />
+    <Content Include="resources\Hookshot-*.zip" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="resources\Pathwinder-*.zip" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,273 @@
+<Window x:Class="PathwinderMgt.Views.AboutWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PathwinderMgt.Views"
+    Title="关于 Pathwinder 管理器" Height="520" Width="640"
+    WindowStartupLocation="CenterOwner"
+    ResizeMode="NoResize"
+    ShowInTaskbar="False"
+    Background="#F5F6F8"
+    FontFamily="Microsoft YaHei" FontSize="13">
+
+    <Window.Resources>
+        <Style x:Key="ChipBtn" TargetType="Button">
+            <Setter Property="Background" Value="#F3F4F6" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="Margin" Value="0,0,8,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ToolTip" Value="点击复制" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#E5E7EB" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 标题区域 -->
+        <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,0,0,20">
+            <TextBlock Text="Pathwinder 管理器"
+                FontSize="22"
+                FontWeight="Bold"
+                HorizontalAlignment="Center"
+                Foreground="#2563EB" />
+            <TextBlock Name="TxtVersion"
+                FontSize="12"
+                Foreground="#6B7280"
+                HorizontalAlignment="Center"
+                Margin="0,6,0,0" />
+        </StackPanel>
+
+        <!-- 内容区域 -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <!-- 快捷方式前缀设置 -->
+                <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                    CornerRadius="6" Padding="16" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="快捷方式前缀" FontSize="14" FontWeight="SemiBold"
+                            Foreground="#111827" Margin="0,0,0,8" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="前缀" Foreground="#374151" VerticalAlignment="Center"
+                                Margin="0,0,8,0" />
+                            <TextBox Name="PrefixBox" MaxLength="4" Width="120"
+                                VerticalContentAlignment="Center" />
+                            <TextBlock Name="PrefixPreview" Foreground="#6B7280"
+                                VerticalAlignment="Center" Margin="16,0,0,0"
+                                Text="预览：● 微信" />
+                        </StackPanel>
+                        <TextBlock TextWrapping="Wrap" Foreground="#9CA3AF" FontSize="12"
+                            LineHeight="18" Margin="0,8,0,0"
+                            Text="最长 4 字符，不可包含文件系统非法符号（&lt; &gt; : &quot; / \ | ? *）。留空恢复默认 ●" />
+                    </StackPanel>
+                </Border>
+
+                <!-- 快捷方式恢复（独立工具） -->
+                <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                    CornerRadius="6" Padding="16" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="快捷方式恢复" FontSize="14" FontWeight="SemiBold"
+                            Foreground="#111827" Margin="0,0,0,8" />
+                        <TextBlock TextWrapping="Wrap" Foreground="#9CA3AF" FontSize="12"
+                            LineHeight="18" Margin="0,0,0,8"
+                            Text="在打开的窗口中拖入带前缀的受管快捷方式，自动还原为普通快捷方式输出到桌面，并删除原文件。独立工具，不影响主列表与程序配置；失败原因会显示在窗口日志中。" />
+                        <Button Content="打开恢复窗口" Style="{StaticResource ToolbarBtn}"
+                            HorizontalAlignment="Left" Click="BtnRestoreShortcut_Click"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 全局默认路径设置（内置规则的源目录，新登记程序默认使用） -->
+                <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                    CornerRadius="6" Padding="16" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="全局默认路径" FontSize="14" FontWeight="SemiBold"
+                            Foreground="#111827" Margin="0,0,0,8" />
+                        <TextBlock TextWrapping="Wrap" Foreground="#9CA3AF" FontSize="12"
+                            LineHeight="18" Margin="0,0,0,8"
+                            Text="新登记程序的默认重定向源目录（初始值 C:\Users）。已登记程序的私有规则不受影响；保存后立即生效，重启后保持。点击右侧「浏览...」按钮选择目录。" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Name="GlobalOriginBox"
+                                VerticalContentAlignment="Center" IsReadOnly="True"
+                                Background="#F9FAFB" Foreground="#374151"
+                                ToolTip="全局默认路径（点击右侧浏览按钮选择目录）"/>
+                            <Button Grid.Column="1" Content="浏览..." Style="{StaticResource ToolbarBtn}"
+                                Margin="8,0,0,0" Click="BtnBrowseGlobalOrigin_Click"/>
+                            <Button Grid.Column="2" Content="恢复默认" Style="{StaticResource ToolbarBtn}"
+                                Margin="8,0,0,0" Click="BtnCancelGlobalOrigin_Click"/>
+                        </Grid>
+                        <TextBlock Name="TxtGlobalOriginHint" TextWrapping="Wrap" FontSize="12"
+                            LineHeight="18" Margin="0,8,0,0" Foreground="#16A34A"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 介绍 -->
+                <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                    CornerRadius="6" Padding="16" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="关于" FontSize="14" FontWeight="SemiBold"
+                            Foreground="#111827" Margin="0,0,0,8" />
+                        <!-- 联系方式按钮：首次启动满 3 天后才显示，之前只保留下载地址 -->
+                        <WrapPanel local:DelayedReveal.MinDays="3">
+                            <Button Style="{StaticResource ChipBtn}" Click="CopyChip_Click"
+                                Tag="393135223">
+                                <TextBlock FontSize="12" Foreground="#374151" Text="QQ 393135223" />
+                            </Button>
+                            <Button Style="{StaticResource ChipBtn}" Click="CopyChip_Click"
+                                Tag="301802646">
+                                <TextBlock FontSize="12" Foreground="#374151" Text="群 301802646" />
+                            </Button>
+                            <Button Style="{StaticResource ChipBtn}" Click="CopyChip_Click"
+                                Tag="Hexiaowen">
+                                <TextBlock FontSize="12" Foreground="#374151" Text="酷安 Hexiaowen" />
+                            </Button>
+                        </WrapPanel>
+                        <TextBlock local:DelayedReveal.MinDays="3" Foreground="#374151" LineHeight="20" Margin="0,6,0,0">
+                            <Hyperlink NavigateUri="https://hexiaowen.lanzouw.com/b00g46ub"
+                                RequestNavigate="Link_RequestNavigate"
+                                Foreground="#2563EB" TextDecorations="Underline">
+                                下载地址
+                            </Hyperlink>
+                            <Run Text=" — 早其作品及更新地址" />
+                        </TextBlock>
+
+                        <TextBlock local:DelayedReveal.MinDays="3" Foreground="#374151" LineHeight="20" Margin="0,6,0,0">
+                            <Hyperlink NavigateUri="https://gitee.com/Hexiaowen61"
+                                RequestNavigate="Link_RequestNavigate"
+                                Foreground="#2563EB" TextDecorations="Underline">
+                                gitee
+                            </Hyperlink>
+                            <Run Text=" — 个人主页" />
+                        </TextBlock>
+                        <TextBlock Foreground="#374151" LineHeight="20" Margin="0,6,0,0">
+                            <Hyperlink NavigateUri="https://www.bilibili.com/video/BV1vinm61E3e?vd_source=980a22801471db3a0b2614e3feadcb7b"
+                                RequestNavigate="Link_RequestNavigate"
+                                Foreground="#2563EB" TextDecorations="Underline">
+                                bilibili
+                            </Hyperlink>
+                            <Run Text=" — 视频教学" />
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+                <!-- 应用介绍 -->
+                <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                    CornerRadius="6" Padding="16" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="应用介绍" FontSize="14" FontWeight="SemiBold"
+                            Foreground="#111827" Margin="0,0,0,8" />
+                        <TextBlock TextWrapping="Wrap" Foreground="#374151" LineHeight="20">
+                            Pathwinder 管理器是一款 Windows桌面工具，让你通过可视化界面，为任意已安装程序添加文件路径重定向能力——无需修改程序代码，即可改变程序的文件读写路径。<LineBreak />
+                            举个例子：大多数程序会在 "C:\Users\用户名\AppData"下创建数据文件，而本工具能将这些文件重定向到指定目录，且不影响程序正常运行。<LineBreak />
+                            简单来说，如果程序在某个目录（如"C:\ddd\eee\fff"）下创建了数据文件，而你不想让这些文件写进该目录，就可以用本工具把它们重定向到别处。<LineBreak />
+                            担心涉及的文件夹太多？你可以添加多条重定向规则，或直接指定一个上层目录（如 "C:\ddd"）一并覆盖。 </TextBlock>
+                        <TextBlock TextWrapping="Wrap" Foreground="#374151" LineHeight="20"
+                            Margin="0,8,0,0">
+                            拖入程序的快捷方式（.lnk）或可执行文件（.exe），配置重定向规则后，一键改写快捷方式，让目标程序在启动时自动应用路径重定向规则。
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- 使用注意事项 -->
+                <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                    CornerRadius="6" Padding="16" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="使用注意事项" FontSize="14" FontWeight="SemiBold"
+                            Foreground="#111827" Margin="0,0,0,8" />
+                        <TextBlock TextWrapping="Wrap" Foreground="#374151" LineHeight="20"
+                            Margin="0,4,0,0">
+                            • 需要特别注意的是，许多程序在安装过程中会默认将程序文件直接安装到用户目录下，
+                            例如典型路径为“C:\Users\用户名\AppData\Local\Programs”。
+                            这种安装行为会导致本工具中已配置的默认重定向规则（针对“C:\\Users”目录）与程序启动路径发生重叠冲突，进而引发程序启动失败。
+                            简而言之，只要是安装在“C:\Users”目录下的程序，都需要手动配置重定向规则，才能正常启动。
+                            解决方法：
+                            1. 手动复制程序到非”C:\Users”目录。
+                            2. 在重定向规则中移除”C:\Users”目录，手动定义重定向规则。
+                        </TextBlock>
+                        <TextBlock TextWrapping="Wrap" Foreground="#374151" LineHeight="20">
+                            • 加载器只能拉起新进程，目标程序必须先关闭再通过受管快捷方式冷启动。
+                        </TextBlock>
+                        <TextBlock TextWrapping="Wrap" Foreground="#374151" LineHeight="20"
+                            Margin="0,4,0,0">
+                            • 盘符根目录（如 C:\）不能作为重定向规则的起点或目标。
+                        </TextBlock>
+                        <TextBlock TextWrapping="Wrap" Foreground="#374151" LineHeight="20"
+                            Margin="0,4,0,0">
+                            • 若目标程序需要管理员权限运行，受管快捷方式也需以管理员身份运行，否则注入失败。
+                        </TextBlock>
+                        <TextBlock TextWrapping="Wrap" Foreground="#374151" LineHeight="20"
+                            Margin="0,4,0,0">
+                            • 修改规则后，已受管程序需点击「更新指令」使新规则生效。
+                        </TextBlock>
+                        <TextBlock TextWrapping="Wrap" Foreground="#374151" LineHeight="20"
+                            Margin="0,4,0,0">
+                            • 请勿将本工具安装到需要管理员权限的目录（如 Program Files）。推荐将本工具安装到用户目录或D盘。
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- 开源地址 -->
+                <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                    CornerRadius="6" Padding="16">
+                    <StackPanel>
+                        <TextBlock Text="开源地址" FontSize="14" FontWeight="SemiBold"
+                            Foreground="#111827" Margin="0,0,0,8" />
+                        <TextBlock Foreground="#374151" LineHeight="20">
+                            <Hyperlink NavigateUri="https://github.com/samuelgr/Hookshot"
+                                RequestNavigate="Link_RequestNavigate"
+                                Foreground="#2563EB" TextDecorations="Underline">
+                                Hookshot
+                            </Hyperlink>
+                            <Run Text=" — 通用 DLL 注入与函数调用拦截库" />
+                        </TextBlock>
+                        <TextBlock Foreground="#374151" LineHeight="20" Margin="0,6,0,0">
+                            <Hyperlink NavigateUri="https://github.com/samuelgr/Pathwinder"
+                                RequestNavigate="Link_RequestNavigate"
+                                Foreground="#2563EB" TextDecorations="Underline">
+                                Pathwinder
+                            </Hyperlink>
+                            <Run Text=" — 文件、目录及注册表路径重定向" />
+                        </TextBlock>
+                        <TextBlock TextWrapping="Wrap" Foreground="#6B7280" LineHeight="18"
+                            Margin="0,10,0,0" FontSize="12">
+                            本工具基于 .NET 8 + WPF 开发，集成上述两个开源项目，感谢开源作者的贡献，欢迎关注。
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 底部按钮 -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal"
+            HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Name="ShareButton" Content="分享" Click="ShareButton_Click"
+                Style="{StaticResource ToolbarBtn}" />
+            <Button Name="OkButton" Content="确定" Click="OkButton_Click"
+                Style="{StaticResource PrimaryBtn}" />
+        </StackPanel>
+    </Grid>
+</Window>
