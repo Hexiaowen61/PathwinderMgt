@@ -281,6 +281,7 @@ BOOL Pathwinder::Hooks::DynamicHook_CreateProcessW::Hook(
 
   std::optional<std::wstring> applicationNameReplacement;
   std::optional<std::wstring> commandLineReplacement;
+  bool imageRedirected = false;
 
   if (nullptr != lpApplicationName)
   {
@@ -288,6 +289,8 @@ BOOL Pathwinder::Hooks::DynamicHook_CreateProcessW::Hook(
 
     if (true == applicationNameReplacement.has_value())
     {
+      imageRedirected = true;
+
       Infra::Message::OutputFormatted(
           Infra::Message::ESeverity::Info,
           L"%s(%u): Redirecting process image path from \"%s\" to \"%s\".",
@@ -310,6 +313,21 @@ BOOL Pathwinder::Hooks::DynamicHook_CreateProcessW::Hook(
   if (nullptr != lpCommandLine)
   {
     const std::wstring_view original(lpCommandLine);
+
+    // The executable image is the first token of the command line. It may be preceded by
+    // whitespace and wrapped in quotes, so its index is not necessarily zero; a redirect reported
+    // at that index is what identifies the image itself as redirected.
+    size_t firstTokenIndex = 0;
+
+    while ((firstTokenIndex < original.size()) && (L' ' == original[firstTokenIndex]))
+    {
+      ++firstTokenIndex;
+    }
+
+    if ((firstTokenIndex < original.size()) && (L'"' == original[firstTokenIndex]))
+    {
+      ++firstTokenIndex;
+    }
 
     std::wstring rebuiltCommandLine;
     rebuiltCommandLine.reserve(original.size() + 256);
@@ -351,6 +369,9 @@ BOOL Pathwinder::Hooks::DynamicHook_CreateProcessW::Hook(
           rebuiltCommandLine.append(original.substr(copiedUpTo, index - copiedUpTo));
           rebuiltCommandLine.append(redirectedPath);
           copiedUpTo = pathEnd;
+
+          // A path at the first token is the executable image (when lpApplicationName is null).
+          if (firstTokenIndex == index) imageRedirected = true;
 
           Infra::Message::OutputFormatted(
               Infra::Message::ESeverity::Info,
@@ -421,6 +442,105 @@ BOOL Pathwinder::Hooks::DynamicHook_CreateProcessW::Hook(
     }
   }
 
+  // Rewrite the environment block so that child processes which derive data paths from
+  // environment variables (e.g. %APPDATA%, %LOCALAPPDATA%, %USERPROFILE%, %TEMP%) also see
+  // the redirected locations. Newer WeChatAppEx builds no longer receive every data directory
+  // through the command line; they derive some from environment variables and open them directly
+  // without going through any hook. Leaving those pointing at the origin drive (where the data
+  // does not exist) makes the child process abort right after start.
+  //
+  // This is only done when the child process image itself was redirected. Otherwise unrelated
+  // applications (e.g. browsers launched from their own install directory) would inherit
+  // APPDATA/LOCALAPPDATA pointing at another application's redirected data store and break.
+  std::wstring rebuiltEnvironmentBlock;
+  LPVOID environmentToUse = lpEnvironment;
+
+  if (imageRedirected)
+  {
+    LPWCH envBlock = nullptr;
+    bool mustFreeEnvBlock = false;
+
+    if (nullptr == lpEnvironment)
+    {
+      envBlock = GetEnvironmentStringsW();
+      mustFreeEnvBlock = true;
+    }
+    else
+    {
+      envBlock = reinterpret_cast<LPWCH>(lpEnvironment);
+    }
+
+    if (nullptr != envBlock)
+    {
+      rebuiltEnvironmentBlock.reserve(32768);
+      bool rewroteAny = false;
+
+      for (LPWSTR entry = envBlock; L'\0' != *entry;)
+      {
+        const std::wstring_view entryView(entry);
+        const auto eqPos = entryView.find(L'=');
+
+        if ((std::wstring_view::npos != eqPos) && (eqPos > 0))
+        {
+          const std::wstring_view value = entryView.substr(eqPos + 1);
+
+          // Only rewrite values that look like absolute drive-letter paths.
+          if (value.size() >= 3 && 0 != iswalpha(value[0]) && L':' == value[1] &&
+              (L'\\' == value[2] || L'/' == value[2]))
+          {
+            const Pathwinder::FileOperationInstruction instruction =
+                FilesystemDirectorInstance().GetInstructionForFileOperation(
+                    value,
+                    Pathwinder::FileAccessMode::ReadOnly(),
+                    Pathwinder::CreateDisposition::OpenExistingFile());
+
+            if (true == instruction.HasRedirectedFilename())
+            {
+              std::wstring_view redirectedPath = instruction.GetRedirectedFilename();
+              redirectedPath.remove_prefix(
+                  Pathwinder::Strings::PathGetWindowsNamespacePrefix(redirectedPath).length());
+
+              rebuiltEnvironmentBlock.append(entryView.substr(0, eqPos + 1));
+              rebuiltEnvironmentBlock.append(redirectedPath);
+              rebuiltEnvironmentBlock.push_back(L'\0');
+              rewroteAny = true;
+
+              Infra::Message::OutputFormatted(
+                  Infra::Message::ESeverity::Info,
+                  L"%s(%u): Redirecting environment variable \"%.*s\" from \"%.*s\" to \"%s\".",
+                  GetFunctionName(),
+                  GetRequestIdentifier(),
+                  static_cast<int>(eqPos),
+                  entryView.data(),
+                  static_cast<int>(value.length()),
+                  value.data(),
+                  redirectedPath.data());
+
+              entry += entryView.size() + 1;
+              continue;
+            }
+          }
+        }
+
+        rebuiltEnvironmentBlock.append(entryView);
+        rebuiltEnvironmentBlock.push_back(L'\0');
+        entry += entryView.size() + 1;
+      }
+
+      rebuiltEnvironmentBlock.push_back(L'\0');
+
+      if (mustFreeEnvBlock)
+      {
+        FreeEnvironmentStringsW(envBlock);
+      }
+
+      if (rewroteAny)
+      {
+        environmentToUse = rebuiltEnvironmentBlock.data();
+      }
+    }
+  }
+
   const BOOL callSucceeded = Original(
       lpApplicationName,
       lpCommandLine,
@@ -428,7 +548,7 @@ BOOL Pathwinder::Hooks::DynamicHook_CreateProcessW::Hook(
       lpThreadAttributes,
       bInheritHandles,
       dwCreationFlags,
-      lpEnvironment,
+      environmentToUse,
       lpCurrentDirectory,
       lpStartupInfo,
       lpProcessInformation);
