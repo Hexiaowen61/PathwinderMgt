@@ -369,3 +369,4 @@ FodyWeavers.xsd
 **/out/
 **/publish/
 **/Output/
+**/.idea/
