@@ -70,6 +70,9 @@ namespace PathwinderMgt.Views
         public MainWindow()
         {
             InitializeComponent();
+            // 版本号来自 csproj 的 <Version>（编译进程序集版本），与「说明」窗口显示的一致
+            var version = typeof(MainWindow).Assembly.GetName().Version;
+            if (version != null) Title = $"Pathwinder 管理器 v{version.Major}.{version.Minor}.{version.Build}";
             LvPrograms.ItemsSource = Rows;
             Loaded += MainWindow_Loaded;
         }
@@ -472,20 +475,16 @@ namespace PathwinderMgt.Views
             App.RestartElevated();
         }
 
-        private void BtnOpenLogs_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                Directory.CreateDirectory(AppPaths.LogDir);
-                Process.Start(new ProcessStartInfo(AppPaths.LogDir) { UseShellExecute = true });
-            }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "无法打开日志目录"); }
-        }
-
         private void BtnAbout_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new AboutWindow(_cfg.Settings.ShortcutPrefix, _cfg) { Owner = this };
-            dlg.ShowDialog();
+            new AboutWindow { Owner = this }.ShowDialog();
+        }
+
+        /// <summary>设置窗口：快捷方式前缀、快捷方式恢复、全局默认路径（原在「说明」窗口中）。</summary>
+        private void BtnSettings_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new SettingsWindow(_cfg.Settings.ShortcutPrefix, _cfg) { Owner = this };
+            if (dlg.ShowDialog() != true) return;
             if (dlg.PrefixResult != null && dlg.PrefixResult != _cfg.Settings.ShortcutPrefix)
             {
                 _cfg.Settings.ShortcutPrefix = dlg.PrefixResult;

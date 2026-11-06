@@ -71,11 +71,13 @@
                 <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Name="TxtTarget" VerticalAlignment="Center"
                            Foreground="#6B7280" Margin="0,0,0,8" TextTrimming="CharacterEllipsis"/>
 
-                <!-- 指令内容：已添加指令时显示快捷方式的完整参数（文档 5.2.2） -->
+                <!-- 指令内容：已添加指令时显示快捷方式的完整参数（文档 5.2.2）。用只读 TextBox 以便鼠标选中复制 -->
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="指令内容" VerticalAlignment="Top" Margin="0,1,8,8"/>
-                <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Name="TxtInstruction" VerticalAlignment="Top"
-                           Foreground="#6B7280" FontFamily="Consolas" Margin="0,0,0,8"
-                           TextWrapping="Wrap" Text="（未添加指令）"/>
+                <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Name="TxtInstruction" VerticalAlignment="Top"
+                         Foreground="#6B7280" FontFamily="Consolas" Margin="0,0,0,8"
+                         TextWrapping="Wrap" Text="（未添加指令）"
+                         IsReadOnly="True" IsReadOnlyCaretVisible="True" Background="Transparent"
+                         BorderThickness="0" Padding="0" VerticalScrollBarVisibility="Disabled"/>
 
                 <!-- Hookshot 诊断日志开关（默认关闭，LogLevel=0；开启后经快捷方式启动会在桌面生成日志，管理器自动清理并补子进程授权） -->
                 <TextBlock Grid.Row="4" Grid.Column="0" Text="Hookshot 日志" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -93,8 +95,8 @@
             </Grid>
         </Border>
 
-        <!-- 规则编辑面板（登记时自动带入默认规则，可编辑） -->
-        <Border Grid.Row="2" Margin="16" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="6">
+        <!-- 规则编辑面板（登记时自动带入默认规则，可编辑）：贴边铺满，去掉四周 16px 外边距 -->
+        <Border Grid.Row="2" Background="#FFFFFF">
             <ContentControl Name="PanelHost"/>
         </Border>
 

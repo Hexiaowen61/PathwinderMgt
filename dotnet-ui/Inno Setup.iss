@@ -18,11 +18,11 @@
 
 [Setup]
 AppName=Pathwinder管理器
-AppVersion=1.0.1
+AppVersion=1.0.2
 ; 关键：设置 Setup.exe 自身的文件版本（鼠标悬停看到的版本号）
 ; 不加此项时默认 0.0.0.0
-VersionInfoVersion=1.0.1.0
-VersionInfoProductVersion=1.0.1.0
+VersionInfoVersion=1.0.2.0
+VersionInfoProductVersion=1.0.2.0
 VersionInfoCompany=Pathwinder
 VersionInfoProductName=Pathwinder管理器
 AppPublisher=Pathwinder
@@ -53,10 +53,15 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
+; 关闭 Inno 自带的 Restart Manager 自动关闭（默认 yes）。
+; 它会把“仍加载 {app}\payload 下 DLL 的程序”（被注入的各应用）视为占用文件，
+; 逐个尝试关闭，失败时弹出“安装程序无法自动关闭所有应用程序”的三按钮对话框。
+; 但 payload 是通过删除硬链接名更新的，已加载的映像不受影响，这些程序无需关闭。
+; 管理器自身由 [Code] 静默 taskkill；确实关不掉时，改在向导页内列出进程供手动关闭。
+CloseApplications=no
+
 ; 安装/卸载时检测管理器是否正在运行，检测逻辑见文件末尾 [Code] 段
-; （InitializeSetup / InitializeUninstall：检测到运行时询问是否自动关闭，
-;  用 taskkill 终止进程后等待互斥量释放。免管理员安装无 Restart Manager
-;  自动关闭能力，AppMutex 只弹标准提示框不会关程序，故不用。）
+; （安装：InitializeSetup 静默关闭，失败则在向导页列出；卸载：询问后重试。）
 
 [Languages]
 Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
@@ -74,6 +79,10 @@ Source: "publish\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ig
 ; 程序首次运行时从 resources 的 zip 重新解压，因此每次安装都会把核心组件刷新到最新。
 ; 被注入的程序仍在运行时：本次不中断安装，其下一次启动即用上新组件。
 Type: filesandordirs; Name: "{app}\payload"
+; 删除历史版本的核心组件包：旧安装残留的 zip 不会被覆盖，目录里可能出现多个版本。
+; 清掉它们，保证安装后 resources 里只剩本次随包发布的版本。
+Type: files; Name: "{app}\resources\Hookshot-*.zip"
+Type: files; Name: "{app}\resources\Pathwinder-*.zip"
 
 [Icons]
 ; 开始菜单快捷方式（始终创建，普通权限，无任何提权标志）
@@ -102,6 +111,11 @@ const
   // 与 App.xaml.cs 的 CreateMutex 保持一致：优先 Global\，降级 Local\，最后无前缀
   AppMutexNames = 'Global\PathwinderManager_SingleInstance,Local\PathwinderManager_SingleInstance,PathwinderManager_SingleInstance';
   AppExeName = 'PathwinderManager.exe';
+
+var
+  BlockedPage: TWizardPage;
+  BlockedHint: TNewStaticText;
+  BlockedList: TNewListBox;
 
 // 静默强制关闭正在运行的管理器进程（不弹任何提示框）。
 // 关闭策略：
@@ -142,24 +156,135 @@ begin
   // 阶段 3：仍未关闭，返回 False 让调用方提示用户
 end;
 
-// 安装前检测：检测到运行则静默强制关闭，无法关闭才提示用户手动关闭
+// 取 CSV 行中第 Index 个字段（去掉引号），用于解析 tasklist 的输出
+function CsvField(const Line: String; Index: Integer): String;
+var
+  I, Count, Start: Integer;
+begin
+  Result := '';
+  Start := 1;
+  Count := 0;
+  for I := 1 to Length(Line) do
+  begin
+    if Line[I] = ',' then
+    begin
+      if Count = Index then
+      begin
+        Result := Copy(Line, Start, I - Start);
+        StringChangeEx(Result, '"', '', True);
+        Exit;
+      end;
+      Inc(Count);
+      Start := I + 1;
+    end;
+  end;
+  if Count = Index then
+  begin
+    Result := Copy(Line, Start, Length(Line) - Start + 1);
+    StringChangeEx(Result, '"', '', True);
+  end;
+end;
+
+// 列出仍在运行的管理器进程（tasklist 的 CSV 行）。没有任何实例时返回空数组。
+// 用进程列表而不是互斥量判断：既决定是否显示提示页，也用来展示进程名与 PID。
+function ListRunningManager(): TArrayOfString;
+var
+  ResultCode: Integer;
+  OutFile: String;
+  Raw: TArrayOfString;
+  I: Integer;
+  Line: String;
+begin
+  SetArrayLength(Result, 0);
+
+  OutFile := ExpandConstant('{tmp}\pw_running_manager.txt');
+  DeleteFile(OutFile);
+  Exec(ExpandConstant('{cmd}'),
+       '/C tasklist /fi "imagename eq ' + AppExeName + '" /fo csv /nh > "' + OutFile + '"',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if not FileExists(OutFile) then Exit;
+  if not LoadStringsFromFile(OutFile, Raw) then Exit;
+
+  // 匹配的行以引号开头，形如 "PathwinderManager.exe","1234","Console","1","12,345 K"；
+  // 没有匹配时 tasklist 输出提示文字，不以引号开头，会被过滤掉
+  for I := 0 to GetArrayLength(Raw) - 1 do
+  begin
+    Line := Trim(Raw[I]);
+    if (Length(Line) > 0) and (Line[1] = '"') then
+    begin
+      SetArrayLength(Result, GetArrayLength(Result) + 1);
+      Result[GetArrayLength(Result) - 1] := Line;
+    end;
+  end;
+
+  DeleteFile(OutFile);
+end;
+
+// 用当前仍在运行的进程刷新提示页列表
+procedure RefreshBlockedList();
+var
+  Rows: TArrayOfString;
+  I: Integer;
+begin
+  BlockedList.Items.Clear;
+  Rows := ListRunningManager();
+  for I := 0 to GetArrayLength(Rows) - 1 do
+    BlockedList.Items.Add(CsvField(Rows[I], 0) + '    PID ' + CsvField(Rows[I], 1));
+end;
+
+procedure InitializeWizard();
+begin
+  BlockedPage := CreateCustomPage(wpReady, '关闭正在运行的程序',
+    '自动关闭未能成功，安装程序需要先关闭下列程序才能继续。');
+  BlockedHint := TNewStaticText.Create(BlockedPage);
+  BlockedHint.Parent := BlockedPage.Surface;
+  BlockedHint.Caption := '请手动关闭以下程序，然后点击“下一步”继续安装：';
+  BlockedList := TNewListBox.Create(BlockedPage);
+  BlockedList.Parent := BlockedPage.Surface;
+  BlockedList.Left := 0;
+  BlockedList.Top := BlockedHint.Top + BlockedHint.Height + ScaleY(8);
+  BlockedList.Width := BlockedPage.SurfaceWidth;
+  BlockedList.Height := BlockedPage.SurfaceHeight - BlockedList.Top;
+  BlockedList.TabStop := False;
+end;
+
+// 安装前检测：检测到运行则静默强制关闭；关不掉时不在此时弹框，
+// 交给向导页 CreateCustomPage(wpReady) 内联展示，由用户手动关闭后继续。
 function InitializeSetup(): Boolean;
 begin
   Result := True;
-  while CheckForMutexes(AppMutexNames) do
-  begin
-    // 静默强制关闭（不弹任何提示框）
-    if TerminateApp() then Break;
+  if CheckForMutexes(AppMutexNames) then
+    TerminateApp();
+end;
 
-    // 无法自动关闭，提示用户手动关闭后重试
-    if MsgBox('安装程序无法自动关闭正在运行的 Pathwinder管理器。' + #13#10#13#10 +
-              '请手动关闭程序后点击"重试"，或点击"取消"退出安装。',
-              mbConfirmation, MB_RETRYCANCEL) = IDCANCEL then
+// 没有正在运行的管理器时跳过该提示页
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if PageID = BlockedPage.ID then
+    Result := GetArrayLength(ListRunningManager()) = 0;
+end;
+
+// 进入提示页时刷新列表（例如用户从“上一步”返回）
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = BlockedPage.ID then
+    RefreshBlockedList();
+end;
+
+// 在提示页点“下一步”：再尝试一次静默关闭；仍有关不掉的实例则留在本页并刷新列表
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = BlockedPage.ID then
+  begin
+    if CheckForMutexes(AppMutexNames) then
+      TerminateApp();
+    if GetArrayLength(ListRunningManager()) > 0 then
     begin
+      RefreshBlockedList();
       Result := False;
-      Exit;
     end;
-    // 重试：继续循环重新检测
   end;
 end;
 

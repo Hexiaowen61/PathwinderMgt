@@ -29,27 +29,28 @@
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Style="{StaticResource ToolbarBtn}" Content="管理员启动" Click="BtnRunAsAdmin_Click" x:Name="BtnRunAsAdmin"/>
-                    <Button Style="{StaticResource ToolbarBtn}" Content="日志" Click="BtnOpenLogs_Click"/>
                     <Button Style="{StaticResource ToolbarBtn}" Content="说明" Click="BtnAbout_Click"/>
-                    <Button Style="{StaticResource ToolbarBtn}" Content="刷新" Click="BtnRefresh_Click"/>
+                    <Button Style="{StaticResource ToolbarBtn}" Content="设置" Click="BtnSettings_Click"/>
                 </StackPanel>
             </DockPanel>
         </Border>
 
         <!-- 工具栏 -->
         <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="16,8">
-            <StackPanel Orientation="Horizontal">
-                <Button Style="{StaticResource PrimaryBtn}" Content="浏览" Click="BtnAddFiles_Click"/>
-                <Button Style="{StaticResource PrimaryBtn}" Content="全部添加" Click="BtnAddAll_Click"/>
-                <Button Style="{StaticResource ToolbarBtn}" Content="全部移除" Click="BtnRemoveAll_Click"/>
-                <Button Style="{StaticResource DangerBtn}" Content="全部删除" Click="BtnDeleteAll_Click"/>
-            </StackPanel>
+            <DockPanel LastChildFill="False">
+                <Button DockPanel.Dock="Right" Style="{StaticResource ToolbarBtn}" Content="刷新" Click="BtnRefresh_Click"/>
+                <StackPanel Orientation="Horizontal">
+                    <Button Style="{StaticResource PrimaryBtn}" Content="浏览" Click="BtnAddFiles_Click"/>
+                    <Button Style="{StaticResource PrimaryBtn}" Content="全部添加" Click="BtnAddAll_Click"/>
+                    <Button Style="{StaticResource ToolbarBtn}" Content="全部移除" Click="BtnRemoveAll_Click"/>
+                    <Button Style="{StaticResource DangerBtn}" Content="全部删除" Click="BtnDeleteAll_Click"/>
+                </StackPanel>
+            </DockPanel>
         </Border>
 
-        <!-- 列表区 -->
-        <Border Grid.Row="2" Padding="16" Background="#F5F6F8">
-            <Border Background="#FFFFFF" CornerRadius="6" BorderBrush="#E5E7EB" BorderThickness="1" ClipToBounds="True">
-                <ListView Name="LvPrograms" Background="Transparent" BorderThickness="0"
+        <!-- 列表区：贴边铺满，去掉四周 16px 外边距（与标题栏/工具栏同宽） -->
+        <Border Grid.Row="2" Background="#FFFFFF">
+            <ListView Name="LvPrograms" Background="Transparent" BorderThickness="0"
                           MouseDoubleClick="LvPrograms_MouseDoubleClick"
                           GridViewColumnHeader.Click="ColHeader_Click"
                           ScrollViewer.HorizontalScrollBarVisibility="Auto">
@@ -113,7 +114,6 @@
                         </GridView>
                     </ListView.View>
                 </ListView>
-            </Border>
         </Border>
 
         <!-- 状态栏 -->

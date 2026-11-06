@@ -330,6 +330,46 @@ namespace PathwinderMgt.Services
             ["Pathwinder.HookModule.32.dll"] = "Win32"
         };
 
+        /// <summary>把 "Pathwinder-v1.2.0-ui20261106" 拆成可比较的排序键：主/次/修订版本号 + ui 日期。</summary>
+        private static (int Major, int Minor, int Patch, int UiDate) VersionRank(string nameWithoutExtension)
+        {
+            var semver = Regex.Match(nameWithoutExtension, @"v(\d+)\.(\d+)\.(\d+)");
+            var uiDate = Regex.Match(nameWithoutExtension, @"ui(\d{8})");
+            return (
+                semver.Success ? int.Parse(semver.Groups[1].Value) : 0,
+                semver.Success ? int.Parse(semver.Groups[2].Value) : 0,
+                semver.Success ? int.Parse(semver.Groups[3].Value) : 0,
+                uiDate.Success ? int.Parse(uiDate.Groups[1].Value) : 0);
+        }
+
+        /// <summary>
+        /// 在 resources 目录中挑选版本最新的压缩包，而不是取文件枚举的第一个。
+        /// 目录里可能残留多个历史版本（旧安装的 zip 不会被自动删除），取枚举首个会解压出旧组件。
+        /// </summary>
+        private static string SelectLatestZip(string baseDir, string prefix)
+        {
+            string[] zips = Directory.GetFiles(baseDir, prefix + "-*.zip");
+            if (zips.Length == 0) return null;
+            return zips.OrderByDescending(z => VersionRank(Path.GetFileNameWithoutExtension(z))).First();
+        }
+
+        /// <summary>取最新的解压目录（开发形态备用来源），规则与 <see cref="SelectLatestZip"/> 一致。</summary>
+        private static string SelectLatestDir(string baseDir, string prefix)
+        {
+            string[] dirs = Directory.GetDirectories(baseDir, prefix + "-*");
+            if (dirs.Length == 0) return null;
+            return dirs.OrderByDescending(d => VersionRank(Path.GetFileName(d))).First();
+        }
+
+        /// <summary>最新的包名（不含扩展名）：zip 优先，解压目录兜底；都没有时返回 null。</summary>
+        private static string SelectLatestPackageName(string baseDir, string prefix)
+        {
+            string zip = SelectLatestZip(baseDir, prefix);
+            if (zip != null) return Path.GetFileNameWithoutExtension(zip);
+            string dir = SelectLatestDir(baseDir, prefix);
+            return dir == null ? null : Path.GetFileName(dir);
+        }
+
         /// <summary>payload 缺失时自动从 resources 修复（zip 优先，解压目录兜底）。返回成功恢复的文件名列表。</summary>
         public static List<string> EnsurePayload()
         {
@@ -359,16 +399,20 @@ namespace PathwinderMgt.Services
             var repaired = new List<string>();
             Directory.CreateDirectory(AppPaths.PayloadDir);
 
-            // 来源 1：Hookshot-*.zip / Pathwinder-*.zip（发布形态最常见）
-            string hsZip = Directory.GetFiles(baseDir, "Hookshot-*.zip").FirstOrDefault();
-            string pwZip = Directory.GetFiles(baseDir, "Pathwinder-*.zip").FirstOrDefault();
+            // 来源 1：Hookshot-*.zip / Pathwinder-*.zip（发布形态最常见）。多版本共存时取最新，
+            // 否则会从历史版本包中解压出旧组件（旧的 zip 不会被安装程序删除）。
+            string hsZip = SelectLatestZip(baseDir, "Hookshot");
+            string pwZip = SelectLatestZip(baseDir, "Pathwinder");
             if (hsZip != null) repaired.AddRange(ExtractFromZip(hsZip, missing));
             if (pwZip != null) repaired.AddRange(ExtractFromZip(pwZip, missing));
 
             // 来源 2：解压后的版本目录（Hookshot-vX/ x64|Win32/ 文件）
             if (repaired.Count < missing.Count)
             {
-                foreach (var dir in Directory.GetDirectories(baseDir, "*-*"))
+                string hsDir = SelectLatestDir(baseDir, "Hookshot");
+                string pwDir = SelectLatestDir(baseDir, "Pathwinder");
+                var dirs = new[] { hsDir, pwDir }.Where(d => d != null).ToList();
+                foreach (var dir in dirs)
                 {
                     string prefix = Path.GetFileName(dir).Split('-')[0]; // Hookshot / Pathwinder
                     foreach (var file in missing.Except(repaired).Where(f => f.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
@@ -417,10 +461,8 @@ namespace PathwinderMgt.Services
         {
             try
             {
-                string hs = Directory.GetFiles(baseDir, "Hookshot-*.zip").Select(Path.GetFileNameWithoutExtension).FirstOrDefault()
-                            ?? Directory.GetDirectories(baseDir, "Hookshot-*").Select(Path.GetFileName).FirstOrDefault();
-                string pw = Directory.GetFiles(baseDir, "Pathwinder-*.zip").Select(Path.GetFileNameWithoutExtension).FirstOrDefault()
-                            ?? Directory.GetDirectories(baseDir, "Pathwinder-*").Select(Path.GetFileName).FirstOrDefault();
+                string hs = SelectLatestPackageName(baseDir, "Hookshot");
+                string pw = SelectLatestPackageName(baseDir, "Pathwinder");
                 if (hs == null || pw == null) return false;
                 File.WriteAllText(Path.Combine(AppPaths.PayloadDir, "version.json"),
                     JsonSerializer.Serialize(new PayloadVersion
@@ -470,11 +512,9 @@ namespace PathwinderMgt.Services
                 try
                 {
                     if (!Directory.Exists(baseDir)) continue;
-                    // zip 文件名优先（发布形态），解压目录兜底（开发形态）
-                    string hs = Directory.GetFiles(baseDir, "Hookshot-*.zip").Select(Path.GetFileNameWithoutExtension).FirstOrDefault()
-                                ?? Directory.GetDirectories(baseDir, "Hookshot-*").Select(Path.GetFileName).FirstOrDefault();
-                    string pw = Directory.GetFiles(baseDir, "Pathwinder-*.zip").Select(Path.GetFileNameWithoutExtension).FirstOrDefault()
-                                ?? Directory.GetDirectories(baseDir, "Pathwinder-*").Select(Path.GetFileName).FirstOrDefault();
+                    // zip 文件名优先（发布形态），解压目录兜底（开发形态）；多版本共存时取最新
+                    string hs = SelectLatestPackageName(baseDir, "Hookshot");
+                    string pw = SelectLatestPackageName(baseDir, "Pathwinder");
                     if (hs == null || pw == null) continue;
                     return new PayloadVersion
                     {

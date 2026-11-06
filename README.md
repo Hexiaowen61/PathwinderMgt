@@ -1,77 +1,51 @@
-# Pathwinder
+# PathwinderMgt
 
-Pathwinder redirects file operations from one location to another in a way that is completely transparent to the application. It does so by hooking low-level Windows system calls and modifying them, subject to the control of the user-supplied redirection rules with which it is configured.
+Pathwinder 的文件重定向能力 + 图形化管理界面。让指定程序在访问 A 目录时，实际读写落到 B 目录，且对程序本身完全透明。
 
-The application itself sees a completely consistent, but potentially illusionary, view of the filesystem. It continues to issue its file operation requests as usual, and Pathwinder will apply the redirection rules and potentially redirect these requests to other filesystem locations without the application being aware.
+基于上游 [Pathwinder](https://github.com/samuelgr/Pathwinder)（路径重定向内核）和 [Hookshot](https://github.com/samuelgr/Hookshot)（DLL 注入框架），在其基础上做了内核修复与桌面 UI 封装。
 
-Pathwinder is implemented as a hook module and needs to be loaded into an application using [Hookshot](https://github.com/samuelgr/Hookshot).
+---
 
-## Differences from Filesystem Links
+## ✨ 本 fork 的增强
 
-A natural question after reading a basic description of Pathwinder's functionality is, "how is this different from something like a symbolic link?"
+### 内核增强（master-enhanced 分支）
 
-Pathwinder *can* behave in a way that is similar to using a filesystem link, such as a symbolic link, but that is the [simplest and most basic](https://github.com/samuelgr/Pathwinder/wiki/Mechanics-of-Filesystem-Rules#Entire-Directory-Replacement) way of configuring it. Even then, Pathwinder is different:
+上游 Pathwinder 只在文件 I/O 层面做重定向。Chromium/Electron 系程序在子进程创建、路径规范化、卷查询等环节会"泄漏"真实路径，导致程序静默失败。
+本 fork 已修复为**规则驱动的通用实现**，不针对具体程序硬编码，同类场景（任意程序、任意重定向规则）都能受益。
 
-- On Windows, creating filesystem links generally requires administrative privileges. Pathwinder does not impose this requirement.
-    - Windows might demand administrative privileges when writing Pathwinder's configuration file, depending on where it is located.
+### 桌面 UI（dotnet-ui 分支）
 
-- Pathwinder works where filesystem links do not. Because filesystem links themselves are special objects that require support from the underlying filesystem, they are not suitable for all situations. Pathwinder binaries and configuration files are just normal files, so Pathwinder can support situations like these without issue. For example:
-    - Cloud syncing services typically cannot properly handle filesystem links. Creating a filesystem link within a directory that syncs to the cloud normally results in either a sync error or the link's target being synced (rather than the link itself).
-    - Filesystems used on removable storage devices like USB keys typically do not support filesystem links, and attempting to create them would fail with an error.
+原版使用方式是"手工逐个配置"：每个程序都要单独写 INI、把核心 DLL 复制到 Hookshot 目录、改命令行参数；程序一多就无法维护。UI 把这套流程全部图形化：
 
-- Making a filesystem link is a system-wide change, visible to all applications that access it. Pathwinder, on the other hand, does not make any persistent changes to the filesystem, nor does it make any system-wide changes whatsoever. Pathwinder only redirects file operations for those applications that the end user has configured, and even then, only while they are running.
+- **一键登记**：导入 `.lnk` 快捷方式或 `.exe`，自动硬链接 Hookshot/Pathwinder 组件、生成该程序的配置与启动指令
+- **规则编辑**：界面上添加/删除/修改重定向规则（源目录 → 目标目录，可选文件模式），保存后点"更新指令"立即生效
+- **批量操作**：浏览目录一键全部添加、全部移除、全部删除
+- **状态监控**：首页实时显示每个已登记程序的运行状态、重定向目标、是否为管理员实例
+- **多开支持**：同一程序可以登记多份，每份指向独立的目标目录，实现互不干扰的无限多开（微信、QQ、游戏存档等）
+- **设置面板**：全局默认路径、快捷方式前缀/恢复、日志目录统一管理
+- **打包发布**：`dotnet_publish.ps1` 一键清理 → 自包含发布 → 编译 Inno Setup 安装包；安装包内已携带 Hookshot 和 Pathwinder 内核（`resources/` 目录），安装后即可使用
 
-Pathwinder additionally offers several features that cannot be replicated by using filesystem links alone.
+---
 
-- A filesystem link for a directory redirects *all filesystem operations* that access that directory. This is not necessarily true for Pathwinder; it supports file patterns so that only those filenames that match the patterns are redirected.
+## 截图
 
-- Pathwinder supports an "overlay" mode that has the effect of merging the contents of multiple directories so they all appear to be part of the same directory.
-    - This is very similar to how an [overlay filesystem works](https://docs.kernel.org/filesystems/overlayfs.html#upper-and-lower), except that Pathwinder is not limited to merging just two directories.
+![首页.png](dotnet-ui/docs/%E9%A6%96%E9%A1%B5.png)
 
-- Unlike filesystem links, which use a fixed origin and target path, Pathwinder determines the origin and target of redirections [dynamically and at run-time](https://github.com/samuelgr/Pathwinder/wiki/Configuration#Dynamic-Reference-Resolution).
-    - This means that, if Pathwinder is configured correctly, two different users logged into the same machine could run the same program at the exact same time and Pathwinder would be able to redirect file operations differently for each (such as to their own per-user locations).
+---
 
-## Getting Started
+## 分支说明
 
-1. Ensure the system is running Windows 10 or 11. Pathwinder is built to target Windows 10 or 11 and does not support older versions of Windows.
+| 分支 | 用途 |
+|---|---|
+| `master` | 同步上游 Pathwinder 原作，不做额外改动 |
+| `master-enhanced` | 在 Pathwinder 内核上修复问题、增加功能（见上文"内核增强"） |
+| `dotnet-ui` | 基于 `master-enhanced` 构建的 UI 项目；发布时会把 `master-enhanced` 的核心产物（Hookshot + Pathwinder 压缩包）打包进 `resources/` 目录随安装包分发 |
 
-1. Ensure the [Visual C++ Runtime for Visual Studio 2022](https://docs.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) is installed. Pathwinder is linked against this runtime and will not work without it. If running a 64-bit operating system, install both the x86 and the x64 versions of this runtime, otherwise install just the x86 version.
+## 使用
 
-1. Download the [latest release of Hookshot](https://github.com/samuelgr/Hookshot/releases) and [follow the instructions](https://github.com/samuelgr/Hookshot/wiki/Getting-Started) on how to set it up for a given application. This most likely means placing all of the Hookshot executables and DLLs into the same directory as the application's executable file.
+- **安装**：运行 `PathwinderManager_*.exe` 安装包，启动后点「浏览」导入程序，或「全部添加」批量登记。
+- **从源码构建**：在 `dotnet-ui` 目录执行 `dotnet_publish.ps1`（清理 → 自包含发布 → Inno Setup 编译）。
 
-1. Download the latest release of Pathwinder and place its DLL file into the same directory as the executable file for the desired application.
+## 许可证
 
-1. Create or place a configuration file into the same directory as Pathwinder's DLL file for the desired application.
-
-1. Use Hookshot to run the desired application.
-
-
-## Configuring Pathwinder
-
-Pathwinder requires a configuration file be present to provide it with the rules it should follow when redirecting filesystem locations.  The configuration file is called Pathwinder.ini and follows standard INI format: name-value pairs scoped into different sections.
-
-Pathwinder will display a warning message box and automatically enable logging if it detects a configuration file error on application start-up. Consult the log file that Pathwinder places on the desktop for the details of any errors.
-
-A basic configuration file is shown below, with specific emphasis on how to create filesystem rules. Refer to the [Configuration page](https://github.com/samuelgr/Pathwinder/wiki/Configuration) for more details.
-
-```ini
-; This section defines a filesystem rule called "MyRedirectionRule" but the actual name can be arbitrary.
-[FilesystemRule:MyRedirectionRule]
-OriginDirectory = C:\SomeDirectoryPath\Origin
-TargetDirectory = C:\SomeOtherDirectoryPath\Target
-
-; Multiple filesystem rules can exist in a configuration file.
-[FilesystemRule:AnotherRule]
-OriginDirectory = C:\AnotherRuleDirectoryPath\Origin
-TargetDirectory = C:\AnotherRuleDirectoryPath2\Target
-
-; A filesystem rule can include one or more file patterns.
-; File patterns are allowed to include wildcards '*' and '?' but they are not regular expressions.
-FilePattern = *.txt
-FilePattern = save???.sav
-FilePattern = OneSpecificFile.dat
-```
-
-## Further Reading
-
-See the [Wiki](https://github.com/samuelgr/Pathwinder/wiki) for complete documentation.
+内核部分沿用上游 [BSD 3-Clause License](LICENSE)，版权归原作者 Samuel Grossman 所有。UI 部分同许可证。

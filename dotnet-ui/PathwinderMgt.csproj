@@ -9,7 +9,7 @@
     <AssemblyName>PathwinderManager</AssemblyName>
     <RootNamespace>PathwinderMgt</RootNamespace>
     <!-- 程序集版本（关于窗口显示）：与 Inno Setup.iss 的 AppVersion 保持一致 -->
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <!-- exe 文件图标（资源管理器/任务栏/安装包卸载入口显示的就是它） -->
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
@@ -28,6 +28,8 @@
     <None Remove="resources\**" />
     <Content Include="resources\Hookshot-*.zip" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="resources\Pathwinder-*.zip" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- 「说明」窗口中展示的更新记录，随程序分发 -->
+    <Content Include="resources\changelog.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
