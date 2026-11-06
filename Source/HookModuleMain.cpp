@@ -65,6 +65,7 @@ namespace Pathwinder
       const DynamicHookRecord hookRecords[] = {
           PROTECTED_HOOK_RECORD(NtClose),
           PROTECTED_HOOK_RECORD(NtCreateFile),
+          PROTECTED_HOOK_RECORD(CreateProcessW),
           PROTECTED_HOOK_RECORD(NtDeleteFile),
           PROTECTED_HOOK_RECORD(NtOpenFile),
           PROTECTED_HOOK_RECORD(NtQueryDirectoryFile),
@@ -78,6 +79,12 @@ namespace Pathwinder
           UNPROTECTED_STATIC_HOOK_RECORD(ShellExecuteW),
           UNPROTECTED_STATIC_HOOK_RECORD(ShellExecuteExA),
           UNPROTECTED_STATIC_HOOK_RECORD(ShellExecuteExW),
+          UNPROTECTED_STATIC_HOOK_RECORD(SHCreateItemFromParsingName),
+          UNPROTECTED_STATIC_HOOK_RECORD(SHOpenFolderAndSelectItems),
+          UNPROTECTED_STATIC_HOOK_RECORD(SHParseDisplayName),
+          UNPROTECTED_STATIC_HOOK_RECORD(ILCreateFromPathW),
+          UNPROTECTED_HOOK_RECORD(GetFinalPathNameByHandleW),
+          UNPROTECTED_HOOK_RECORD(GetVolumePathNameW),
       };
 
       Infra::Message::OutputFormatted(
