@@ -20,6 +20,7 @@
 #include <Infra/Core/TemporaryBuffer.h>
 #include <Infra/Test/TestCase.h>
 
+#include "ExtFilesystem.h"
 #include "FilesystemInstruction.h"
 #include "MockFilesystemOperations.h"
 #include "PrefixTree.h"
@@ -221,6 +222,40 @@ namespace PathwinderTest
          FileOperationInstruction::SimpleRedirectTo(
              L"C:\\Target3\\Subdir3\\Subdir3B\\Subdir3C\\file3.txt",
              EAssociateNameWithHandle::Unredirected)}};
+
+    for (const auto& testRecord : kTestInputsAndExpectedOutputs)
+    {
+      const std::wstring_view testInput = testRecord.first;
+      const auto& expectedOutput = testRecord.second;
+
+      auto actualOutput = director.GetInstructionForFileOperation(
+          testInput, FileAccessMode::ReadOnly(), CreateDisposition::OpenExistingFile());
+      TEST_ASSERT(actualOutput == expectedOutput);
+    }
+  }
+
+  // Creates a filesystem director with a few non-overlapping rules that use Simple Pro redirection
+  // mode and queries it for redirection with a few file inputs. Verifies that each time the
+  // resulting instruction encodes a redirection with read fallback and the correct redirected
+  // path.
+  TEST_CASE(FilesystemDirector_GetInstructionForFileOperation_SimpleProRedirectMode)
+  {
+    MockFilesystemOperations mockFilesystem;
+
+    const FilesystemDirector director(MakeFilesystemDirector({
+        {L"1",
+         FilesystemRule(L"1", L"C:\\Origin1", L"C:\\Target1", {}, ERedirectMode::SimplePro)},
+        {L"2",
+         FilesystemRule(L"2", L"C:\\Origin2", L"C:\\Target2", {}, ERedirectMode::SimplePro)},
+    }));
+
+    const std::pair<std::wstring_view, FileOperationInstruction> kTestInputsAndExpectedOutputs[] = {
+        {L"C:\\Origin1\\file1.txt",
+         Ext::SimpleProRedirectTo(
+             L"C:\\Target1\\file1.txt", EAssociateNameWithHandle::Unredirected)},
+        {L"C:\\Origin2\\Subdir2\\file2.txt",
+         Ext::SimpleProRedirectTo(
+             L"C:\\Target2\\Subdir2\\file2.txt", EAssociateNameWithHandle::Unredirected)}};
 
     for (const auto& testRecord : kTestInputsAndExpectedOutputs)
     {

@@ -129,6 +129,7 @@
     <ClCompile Include="Source\Hooks.cpp" />
     <ClCompile Include="Source\OpenHandleStore.cpp" />
     <ClCompile Include="Source\PathwinderConfigReader.cpp" />
+    <ClCompile Include="Source\PathwinderExt\ExtHooks.cpp" />
     <ClCompile Include="Source\Strings.cpp" />
     <ClCompile Include="Source\ThreadPool.cpp" />
   </ItemGroup>

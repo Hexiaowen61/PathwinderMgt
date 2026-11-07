@@ -65,6 +65,13 @@ namespace Pathwinder
     /// exist at all.
     Simple,
 
+    /// Simple redirection mode with read fallback. Behaves exactly like simple redirection
+    /// mode, except that when a redirected file open or query fails because the file does not
+    /// exist on the target side, the unredirected file name is tried once as a fallback. This
+    /// allows applications to read files that exist on the origin side but were never copied
+    /// into the target directory.
+    SimplePro,
+
     /// Overlay redirection mode. File operations merge the target side with the origin
     /// side, with files on the target side given priority.
     Overlay,

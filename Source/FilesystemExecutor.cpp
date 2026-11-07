@@ -26,6 +26,7 @@
 
 #include "ApiWindows.h"
 #include "BufferPool.h"
+#include "ExtFilesystem.h"
 #include "FileInformationStruct.h"
 #include "FilesystemOperations.h"
 #include "OpenHandleStore.h"
@@ -1036,6 +1037,7 @@ namespace Pathwinder
           break;
 
         case ETryFiles::RedirectedOnly:
+        case ETryFiles::RedirectedOnlyWithFallback:
           fileOperationsList.PushBack(&redirectedFileObject);
           break;
 
@@ -1580,6 +1582,36 @@ namespace Pathwinder
       if (true == lastAttemptedPath.empty())
         return underlyingSystemCallInvoker(fileHandle, objectAttributes, createDisposition);
 
+      // Simple Pro mode read fallback: if the redirected file does not exist, retry plain opens
+      // of existing non-directory files using the unredirected filename. A handle opened this
+      // way refers to the real unredirected file, so it is not placed into the open handle
+      // store; its true path already equals the path the application requested, hence no path
+      // illusion is needed.
+      if ((false == NT_SUCCESS(systemCallResult)) && (FILE_OPEN == createDisposition) &&
+          (0 == (createOptions & FILE_DIRECTORY_FILE)))
+      {
+        const std::wstring_view composedUnredirectedPath =
+            ((true == operationContext.composedInputPath.has_value())
+                 ? operationContext.composedInputPath->AsStringView()
+                 : std::wstring_view());
+
+        const auto maybeFallbackResult = Ext::TryUnredirectedFilenameFallback(
+            functionName,
+            functionRequestIdentifier,
+            redirectionInstruction,
+            *objectAttributes,
+            composedUnredirectedPath,
+            systemCallResult,
+            L"opened",
+            [&](POBJECT_ATTRIBUTES fallbackObjectAttributes) -> NTSTATUS
+            {
+              return underlyingSystemCallInvoker(
+                  fileHandle, fallbackObjectAttributes, createDisposition);
+            });
+
+        if (true == maybeFallbackResult.has_value()) return *maybeFallbackResult;
+      }
+
       if (NT_SUCCESS(systemCallResult))
         SelectFilenameAndStoreNewlyOpenedHandle(
             functionName,
@@ -1959,6 +1991,32 @@ namespace Pathwinder
       }
 
       if (true == lastAttemptedPath.empty()) return underlyingSystemCallInvoker(objectAttributes);
+
+      // Simple Pro mode read fallback: if the redirected file does not exist, retry the query
+      // using the unredirected filename. Queries are read-only, so this fallback cannot modify
+      // anything outside the redirected location.
+      if (false == NT_SUCCESS(systemCallResult))
+      {
+        const std::wstring_view composedUnredirectedPath =
+            ((true == operationContext.composedInputPath.has_value())
+                 ? operationContext.composedInputPath->AsStringView()
+                 : std::wstring_view());
+
+        const auto maybeFallbackResult = Ext::TryUnredirectedFilenameFallback(
+            functionName,
+            functionRequestIdentifier,
+            redirectionInstruction,
+            *objectAttributes,
+            composedUnredirectedPath,
+            systemCallResult,
+            L"queried",
+            [&](POBJECT_ATTRIBUTES fallbackObjectAttributes) -> NTSTATUS
+            {
+              return underlyingSystemCallInvoker(fallbackObjectAttributes);
+            });
+
+        if (true == maybeFallbackResult.has_value()) return *maybeFallbackResult;
+      }
 
       return systemCallResult;
     }

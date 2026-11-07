@@ -128,6 +128,7 @@
     <ClCompile Include="Source\Test\Case\Unit\FileInformationStructTest.cpp" />
     <ClCompile Include="Source\Test\Case\Unit\FilesystemDirectorBuilderTest.cpp" />
     <ClCompile Include="Source\Test\Case\Unit\FilesystemDirectorTest.cpp" />
+    <ClCompile Include="Source\Test\Case\Unit\FilesystemExecutorSimpleProTest.cpp" />
     <ClCompile Include="Source\Test\Case\Unit\FilesystemExecutorTest.cpp" />
     <ClCompile Include="Source\Test\Case\Unit\FilesystemRuleTest.cpp" />
     <ClCompile Include="Source\Test\Case\Unit\OpenHandleStoreTest.cpp" />
