@@ -45,6 +45,9 @@
     <ClCompile Include="Source\Hooks.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\PathwinderExt\ExtHooks.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Source\DirectoryOperationQueue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

@@ -21,6 +21,7 @@
 #include <Infra/Core/Strings.h>
 
 #include "ApiWindows.h"
+#include "ExtFilesystem.h"
 #include "FilesystemInstruction.h"
 #include "FilesystemOperations.h"
 #include "FilesystemRule.h"
@@ -222,6 +223,7 @@ namespace Pathwinder
               switch (directoryEnumerationRule.GetRedirectMode())
               {
                 case ERedirectMode::Simple:
+                case ERedirectMode::SimplePro:
                   numSimpleRedirectModeRules = 1;
                   if (false == directoryEnumerationRule.HasFilePatterns())
                     containsSimpleRedirectModeRuleWithNoFilePatterns = true;
@@ -270,6 +272,7 @@ namespace Pathwinder
                 switch (directoryEnumerationRule.GetRedirectMode())
                 {
                   case ERedirectMode::Simple:
+                  case ERedirectMode::SimplePro:
                     numSimpleRedirectModeRules += 1;
                     if (false == directoryEnumerationRule.HasFilePatterns())
                       containsSimpleRedirectModeRuleWithNoFilePatterns = true;
@@ -373,6 +376,7 @@ namespace Pathwinder
             switch (originalRedirectRule->GetRedirectMode())
             {
               case ERedirectMode::Simple:
+              case ERedirectMode::SimplePro:
 
                 // In simple mode, the target-side contents that are in the filesystem rule scope
                 // replace the contents of any contents on the origin side that are also in the
@@ -793,6 +797,19 @@ namespace Pathwinder
         // In simple redirection mode there is nothing further to do. Only one file is
         // attempted, so no preference based on create disposition needs to be set.
         return FileOperationInstruction::SimpleRedirectTo(
+            std::move(*maybeRedirectedFilePath),
+            EAssociateNameWithHandle::Unredirected,
+            std::move(extraPreOperations),
+            extraPreOperationOperand);
+      }
+
+      case ERedirectMode::SimplePro:
+      {
+        // In simple redirection mode with read fallback there is nothing further to do. Only
+        // one file is attempted, so no preference based on create disposition needs to be set.
+        // The fallback itself is applied by the executor once the redirected file is found to
+        // be missing.
+        return Ext::SimpleProRedirectTo(
             std::move(*maybeRedirectedFilePath),
             EAssociateNameWithHandle::Unredirected,
             std::move(extraPreOperations),
