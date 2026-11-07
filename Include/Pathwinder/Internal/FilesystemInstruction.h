@@ -154,6 +154,13 @@ namespace Pathwinder
     /// Only try submitting the redirected filename.
     RedirectedOnly,
 
+    /// Only try submitting the redirected filename, but if the operation fails because the
+    /// redirected file does not exist then a single fallback attempt using the unredirected
+    /// filename is permitted for read-style operations. The fallback is implemented outside of
+    /// the standard filename-try loop, so this enumerator produces the same file operations
+    /// list as #RedirectedOnly.
+    RedirectedOnlyWithFallback,
+
     /// Not used as a value. Identifies the number of enumerators present in this
     /// enumeration.
     Count

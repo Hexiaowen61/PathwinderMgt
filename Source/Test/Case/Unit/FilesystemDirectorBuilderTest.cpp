@@ -243,6 +243,11 @@ namespace PathwinderTest
         {L"TargetDirectory", L"C:\\TargetDir2"},
         {L"RedirectMode", L"Overlay"}};
 
+    Infra::Configuration::Section configSection3 = {
+        {L"OriginDirectory", L"C:\\OriginDir3"},
+        {L"TargetDirectory", L"C:\\TargetDir3"},
+        {L"RedirectMode", L"Simple Pro"}};
+
     FilesystemDirectorBuilder directorBuilder;
 
     auto maybeConfigRule1 = directorBuilder.AddRuleFromConfigurationSection(L"1", configSection1);
@@ -256,6 +261,12 @@ namespace PathwinderTest
     TEST_ASSERT(maybeConfigRule2.Value()->GetRedirectMode() == ERedirectMode::Overlay);
     TEST_ASSERT(maybeConfigRule2.Value()->GetOriginDirectoryFullPath() == L"C:\\OriginDir2");
     TEST_ASSERT(maybeConfigRule2.Value()->GetTargetDirectoryFullPath() == L"C:\\TargetDir2");
+
+    auto maybeConfigRule3 = directorBuilder.AddRuleFromConfigurationSection(L"3", configSection3);
+    TEST_ASSERT(maybeConfigRule3.HasValue());
+    TEST_ASSERT(maybeConfigRule3.Value()->GetRedirectMode() == ERedirectMode::SimplePro);
+    TEST_ASSERT(maybeConfigRule3.Value()->GetOriginDirectoryFullPath() == L"C:\\OriginDir3");
+    TEST_ASSERT(maybeConfigRule3.Value()->GetTargetDirectoryFullPath() == L"C:\\TargetDir3");
   }
 
   // Verifies that non-overlapping filesystem rules can be created with file patterns.

@@ -2412,6 +2412,8 @@ namespace PathwinderTest
         {.tryFilesTestInput = ETryFiles::UnredirectedFirst,
          .expectedOrderedPaths = {kUnredirectedPath, kRedirectedPath}},
         {.tryFilesTestInput = ETryFiles::RedirectedOnly, .expectedOrderedPaths = {kRedirectedPath}},
+        {.tryFilesTestInput = ETryFiles::RedirectedOnlyWithFallback,
+         .expectedOrderedPaths = {kRedirectedPath}},
         {.tryFilesTestInput = ETryFiles::RedirectedFirst,
          .expectedOrderedPaths = {kRedirectedPath, kUnredirectedPath}},
     };
@@ -3604,6 +3606,8 @@ namespace PathwinderTest
         {.tryFilesTestInput = ETryFiles::UnredirectedFirst,
          .expectedOrderedPaths = {kUnredirectedPath, kRedirectedPath}},
         {.tryFilesTestInput = ETryFiles::RedirectedOnly, .expectedOrderedPaths = {kRedirectedPath}},
+        {.tryFilesTestInput = ETryFiles::RedirectedOnlyWithFallback,
+         .expectedOrderedPaths = {kRedirectedPath}},
         {.tryFilesTestInput = ETryFiles::RedirectedFirst,
          .expectedOrderedPaths = {kRedirectedPath, kUnredirectedPath}},
     };
@@ -4166,6 +4170,10 @@ namespace PathwinderTest
         {.tryFilesTestInput = ETryFiles::UnredirectedFirst,
          .expectedOrderedPaths = {kUnredirectedPath, kRedirectedPath}},
         {.tryFilesTestInput = ETryFiles::RedirectedOnly, .expectedOrderedPaths = {kRedirectedPath}},
+        // Simple Pro mode (RedirectedOnlyWithFallback) falls back to the unredirected filename
+        // when the redirected file is not found.
+        {.tryFilesTestInput = ETryFiles::RedirectedOnlyWithFallback,
+         .expectedOrderedPaths = {kRedirectedPath, kUnredirectedPath}},
         {.tryFilesTestInput = ETryFiles::RedirectedFirst,
          .expectedOrderedPaths = {kRedirectedPath, kUnredirectedPath}},
     };

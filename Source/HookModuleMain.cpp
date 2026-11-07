@@ -14,6 +14,7 @@
 #include <Infra/Core/ProcessInfo.h>
 
 #include "ApiWindows.h"
+#include "ExtHooks.h"
 #include "Globals.h"
 #include "Hooks.h"
 #include "Strings.h"

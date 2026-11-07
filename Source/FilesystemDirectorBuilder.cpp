@@ -132,7 +132,9 @@ namespace Pathwinder
         Infra::Strings::CaseInsensitiveHasher<wchar_t>,
         Infra::Strings::CaseInsensitiveEqualityComparator<wchar_t>>
         kRedirectModeStrings = {
-            {L"Simple", ERedirectMode::Simple}, {L"Overlay", ERedirectMode::Overlay}};
+            {L"Simple", ERedirectMode::Simple},
+            {L"Simple Pro", ERedirectMode::SimplePro},
+            {L"Overlay", ERedirectMode::Overlay}};
 
     const auto redirectModeIter = kRedirectModeStrings.find((*configSetting)->GetString());
     if (kRedirectModeStrings.cend() == redirectModeIter) return std::nullopt;
@@ -150,6 +152,9 @@ namespace Pathwinder
     {
       case ERedirectMode::Simple:
         return L"Simple";
+
+      case ERedirectMode::SimplePro:
+        return L"Simple Pro";
 
       case ERedirectMode::Overlay:
         return L"Overlay";

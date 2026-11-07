@@ -75,6 +75,9 @@
     <ClCompile Include="Source\Test\Case\Unit\FilesystemDirectorTest.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Test\Case\Unit\FilesystemExecutorSimpleProTest.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Test\Case\Unit\FilesystemExecutorTest.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
