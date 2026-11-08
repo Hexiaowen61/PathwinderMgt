@@ -26,19 +26,54 @@ namespace PathwinderMgt.Views
         public ObservableCollection<RuleVM> Rows { get; } = new();
         private RuleVM _current;
 
+        // 规则级模式编辑：仅详情页「模式切换」为自定义时启用；否则置灰并跟随显示程序级模式
+        private bool _customEnabled;
+        private readonly Func<string> _getProgramMode;
+
         /// <summary>规则内容变化（保存）后触发，宿主负责落盘。</summary>
         public event EventHandler Changed;
 
-        public RulesPanel(List<Rule> rules)
+        /// <param name="customEnabled">是否处于“自定义”模式（允许逐规则编辑模式）。</param>
+        /// <param name="getProgramMode">取程序级当前模式（跟随显示/物化新规则用）。</param>
+        public RulesPanel(List<Rule> rules, bool customEnabled, Func<string> getProgramMode)
         {
             InitializeComponent();
             _rules = rules;
+            _customEnabled = customEnabled;
+            _getProgramMode = getProgramMode;
+            CmbRuleMode.IsEnabled = customEnabled;
+            CmbRuleMode.SelectedIndex = ModeToIndex(getProgramMode());
             LvRules.ItemsSource = Rows;
             foreach (var r in _rules) Rows.Add(new RuleVM(r));
             if (Rows.Count > 0) LvRules.SelectedIndex = 0;
         }
 
         private void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
+
+        private static int ModeToIndex(string mode) => mode switch
+        {
+            ProgramEntry.RedirectModeSimple => 0,
+            ProgramEntry.RedirectModeOverlay => 2,
+            _ => 1 // SimplePro（默认）
+        };
+
+        private static string IndexToMode(int index) => index switch
+        {
+            0 => ProgramEntry.RedirectModeSimple,
+            2 => ProgramEntry.RedirectModeOverlay,
+            _ => ProgramEntry.RedirectModeSimplePro
+        };
+
+        /// <summary>主模式切换后由宿主调用：自定义→启用编辑并显示各规则值；非自定义→置灰并跟随显示主模式。</summary>
+        public void SetCustomMode(bool enabled)
+        {
+            _customEnabled = enabled;
+            CmbRuleMode.IsEnabled = enabled;
+            CmbRuleMode.SelectedIndex = ModeToIndex(
+                enabled && _current != null
+                    ? _current.Source.RedirectMode ?? _getProgramMode()
+                    : _getProgramMode());
+        }
 
         private void LvRules_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -51,6 +86,10 @@ namespace PathwinderMgt.Views
             TxtName.Text = vm.Source.Name;
             TxtOrigin.Text = vm.Source.OriginDirectory;
             TxtTarget.Text = vm.Source.TargetDirectory;
+            // 非自定义：跟随显示程序级模式；自定义：显示该规则独立值
+            CmbRuleMode.SelectedIndex = ModeToIndex(
+                _customEnabled ? vm.Source.RedirectMode ?? _getProgramMode()
+                               : _getProgramMode());
         }
 
         private void BtnAdd_Click(object sender, RoutedEventArgs e)
@@ -60,6 +99,8 @@ namespace PathwinderMgt.Views
             while (_rules.Any(r => r.Name == name)) name = "新规则" + (++n);
 
             var r = new Rule { Name = name };
+            // 自定义状态下新规则物化为程序级当前值；非自定义保持 null（跟随程序级）
+            if (_customEnabled) r.RedirectMode = _getProgramMode();
             _rules.Add(r);
             var vm = new RuleVM(r);
             Rows.Add(vm);
@@ -130,6 +171,8 @@ namespace PathwinderMgt.Views
                     while (_rules.Any(r => r.Name == draft.Name + n)) n++;
                     draft.Name += n;
                 }
+                // 自定义状态下新规则物化为程序级当前值；非自定义保持 null（跟随程序级）
+                if (_customEnabled) draft.RedirectMode = _getProgramMode();
                 _rules.Add(draft);
                 var vm = new RuleVM(draft);
                 Rows.Add(vm);
@@ -141,6 +184,9 @@ namespace PathwinderMgt.Views
                 _current.Source.Name = draft.Name;
                 _current.Source.OriginDirectory = draft.OriginDirectory;
                 _current.Source.TargetDirectory = draft.TargetDirectory;
+                // 自定义状态下保存规则级独立模式；非自定义保持 null（跟随程序级）
+                if (_customEnabled)
+                    _current.Source.RedirectMode = IndexToMode(CmbRuleMode.SelectedIndex);
 
                 err = RuleValidator.ValidateList(_rules);
                 int idx = Rows.IndexOf(_current);

@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using PathwinderMgt.Models;
 using PathwinderMgt.Services;
 
@@ -21,6 +22,7 @@ namespace PathwinderMgt.Views
         public class RowVM
         {
             public ProgramEntry P { get; init; }
+            internal RowState State { get; private set; }
             public string Status { get; private set; }
             public string StatusBg { get; private set; }
             public string StatusFg { get; private set; }
@@ -35,6 +37,7 @@ namespace PathwinderMgt.Views
 
             internal void SetState(RowState state)
             {
+                State = state;
                 switch (state)
                 {
                     case RowState.Managed:
@@ -66,6 +69,7 @@ namespace PathwinderMgt.Views
         public ObservableCollection<RowVM> Rows { get; } = new();
         private bool _warningsShown;
         private bool? _nameSortAsc; // 显示名排序方向：null=未排序，true=升序，false=降序
+        private bool? _statusSortAsc; // 状态排序方向：null=未排序，true=升序，false=降序
 
         public MainWindow()
         {
@@ -155,17 +159,36 @@ namespace PathwinderMgt.Views
                 LvPrograms.UpdateLayout();
                 gv.RefreshAutoColumns();
             }
-            ApplyNameSort(); // 保持显示名排序状态（RefreshRows 重建行后重新应用）
+            ApplyActiveSort(); // 保持当前排序状态（RefreshRows 重建行后重新应用）
         }
 
-        // ---------------- 显示名排序 ----------------
+        // ---------------- 排序 ----------------
 
-        /// <summary>点击"显示名"表头：切换升序/降序（其余表头不响应）。</summary>
+        /// <summary>点击表头切换排序：显示名、状态各支持升序/降序，二者互斥。</summary>
         private void ColHeader_Click(object sender, RoutedEventArgs e)
         {
-            if (e.OriginalSource is not GridViewColumnHeader hdr || !ReferenceEquals(hdr.Column, ColDisplay)) return;
-            _nameSortAsc = _nameSortAsc != true; // 未排序/降序 → 升序；升序 → 降序
-            ApplyNameSort();
+            if (e.OriginalSource is not GridViewColumnHeader hdr) return;
+            if (ReferenceEquals(hdr.Column, ColDisplay))
+            {
+                _statusSortAsc = null;
+                ColStatus.Header = "状态";
+                _nameSortAsc = _nameSortAsc != true; // 未排序/降序 → 升序；升序 → 降序
+            }
+            else if (ReferenceEquals(hdr.Column, ColStatus))
+            {
+                _nameSortAsc = null;
+                ColDisplay.Header = "显示名";
+                _statusSortAsc = _statusSortAsc != true;
+            }
+            else return;
+            ApplyActiveSort();
+        }
+
+        /// <summary>按当前生效的排序方式重排（默认不排序）。</summary>
+        private void ApplyActiveSort()
+        {
+            if (_statusSortAsc != null) ApplyStatusSort();
+            else ApplyNameSort();
         }
 
         /// <summary>按显示名重排当前行集合并更新表头箭头。</summary>
@@ -177,6 +200,34 @@ namespace PathwinderMgt.Views
             var sorted = _nameSortAsc == true
                 ? Rows.OrderBy(r => r.DisplayName, StringComparer.CurrentCulture).ToList()
                 : Rows.OrderByDescending(r => r.DisplayName, StringComparer.CurrentCulture).ToList();
+            MoveRows(sorted);
+        }
+
+        /// <summary>按状态重排：升序为 已受管→未受管→无权限→文件缺失→不管理，同状态按显示名。</summary>
+        private void ApplyStatusSort()
+        {
+            ColStatus.Header = _statusSortAsc == null ? "状态"
+                : _statusSortAsc == true ? "状态 ▲" : "状态 ▼";
+            if (_statusSortAsc == null || Rows.Count < 2) return;
+            var sorted = _statusSortAsc == true
+                ? Rows.OrderBy(r => StatusRank(r.State)).ThenBy(r => r.DisplayName, StringComparer.CurrentCulture).ToList()
+                : Rows.OrderByDescending(r => StatusRank(r.State)).ThenBy(r => r.DisplayName, StringComparer.CurrentCulture).ToList();
+            MoveRows(sorted);
+        }
+
+        private static int StatusRank(RowState state) => state switch
+        {
+            RowState.Managed => 0,
+            RowState.Unmanaged => 1,
+            RowState.PermissionDenied => 2,
+            RowState.Missing => 3,
+            RowState.Excluded => 4,
+            _ => 5
+        };
+
+        /// <summary>把行集合移动成目标顺序（ObservableCollection 无法直接重排）。</summary>
+        private void MoveRows(IReadOnlyList<RowVM> sorted)
+        {
             for (int i = 0; i < sorted.Count; i++)
             {
                 int idx = Rows.IndexOf(sorted[i]);
@@ -504,9 +555,28 @@ namespace PathwinderMgt.Views
                 CleanupText.Text = _cfg.Settings.LastCleanupTime is DateTime t
                     ? $"上次清理：{t:yyyy-MM-dd HH:mm:ss}（重建 {result.WorkspacesRebuilt}，删除孤儿 {result.OrphanDirsRemoved}）"
                     : CleanupText.Text;
-                StatusText.Text = "已刷新";
+                AnimateRowsIn();
             }
             catch (Exception ex) { MessageBox.Show(ex.Message, "刷新失败"); }
+        }
+
+        /// <summary>刷新完成后让列表行依次淡入，用列表动画替代左下角的“已刷新”文字提示。</summary>
+        private void AnimateRowsIn()
+        {
+            UpdateLayout(); // 先完成布局，确保当前可见行已生成容器
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            int index = 0;
+            foreach (var row in Rows)
+            {
+                if (LvPrograms.ItemContainerGenerator.ContainerFromItem(row) is not ListViewItem container) continue;
+                var fade = new DoubleAnimation(0.25, 1.0, TimeSpan.FromMilliseconds(240))
+                {
+                    BeginTime = TimeSpan.FromMilliseconds(Math.Min(index, 10) * 28),
+                    EasingFunction = ease
+                };
+                container.BeginAnimation(UIElement.OpacityProperty, fade);
+                if (++index >= 14) break; // 只对前 14 行做交错动画，避免长列表刷新时拖慢
+            }
         }
     }
 

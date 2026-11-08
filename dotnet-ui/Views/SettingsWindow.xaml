@@ -14,7 +14,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="0" Padding="2" VerticalScrollBarVisibility="Auto">
             <StackPanel>
                 <!-- 全局默认路径设置（内置规则的源目录，新登记程序默认使用） -->
                 <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
@@ -32,8 +32,9 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Name="GlobalOriginBox"
-                                VerticalContentAlignment="Center" IsReadOnly="True"
-                                Background="#F9FAFB" Foreground="#374151"
+                                Style="{StaticResource InputBox}"
+                                IsReadOnly="True"
+                                Background="#F9FAFB"
                                 ToolTip="全局默认路径（点击右侧浏览按钮选择目录）"/>
                             <Button Grid.Column="1" Content="浏览..." Style="{StaticResource ToolbarBtn}"
                                 Margin="8,0,0,0" Click="BtnBrowseGlobalOrigin_Click"/>
@@ -56,7 +57,7 @@
                             <TextBlock Text="前缀" Foreground="#374151" VerticalAlignment="Center"
                                 Margin="0,0,8,0" />
                             <TextBox Name="PrefixBox" MaxLength="4" Width="120"
-                                VerticalContentAlignment="Center" />
+                                Style="{StaticResource InputBox}" />
                             <TextBlock Name="PrefixPreview" Foreground="#6B7280"
                                 VerticalAlignment="Center" Margin="16,0,0,0"
                                 Text="预览：● 微信" />

@@ -19,13 +19,21 @@ namespace PathwinderMgt.Models
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool BuiltIn { get; set; }
 
+        /// <summary>
+        /// 规则级重定向模式（Simple / SimplePro / Overlay）；null = 跟随程序级 ProgramEntry.RedirectMode。
+        /// 详情页「模式切换」选“自定义”时才为各规则赋独立值；任一规则该值非空即视为自定义状态。
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string RedirectMode { get; set; }
+
         public Rule Clone() => new()
         {
             Name = Name,
             OriginDirectory = OriginDirectory,
             TargetDirectory = TargetDirectory,
             FilePatterns = new List<string>(FilePatterns),
-            BuiltIn = BuiltIn
+            BuiltIn = BuiltIn,
+            RedirectMode = RedirectMode
         };
     }
 
@@ -42,11 +50,17 @@ namespace PathwinderMgt.Models
         public string OriginalArguments { get; set; } = "";
         public string OriginalWorkingDir { get; set; } = "";
 
+        /// <summary>重定向模式：Simple（严格）/ SimplePro（Simple+读回退，默认）/ Overlay（合并目录视图）。写入 Pathwinder.ini 各规则节的 RedirectMode 行（Simple 省略该行）。</summary>
+        public const string RedirectModeSimple = "Simple";
+        public const string RedirectModeSimplePro = "SimplePro";
+        public const string RedirectModeOverlay = "Overlay";
+        public string RedirectMode { get; set; } = RedirectModeSimplePro;
+
         /// <summary>本程序生效的规则集（登记时从全局内置模板自动带入一条默认规则，可编辑）</summary>
         public List<Rule> OverrideRules { get; set; } = new();
         public string Architecture { get; set; } = X64;
 
-        /// <summary>是否开启 Hookshot 诊断日志（默认关闭，LogLevel=0；开启时 LogLevel=2，用于排查子进程授权）。</summary>
+        /// <summary>是否开启 Hookshot 诊断日志（默认关闭，LogLevel=0；开启时 LogLevel=5（最大级别），用于排查子进程授权）。</summary>
         public bool HookshotLogEnabled { get; set; } = false;
 
         /// <summary>标记为"不管理"：主列表仅保留详情入口，全部添加/全部移除/删除全部记录等批量操作自动跳过。</summary>

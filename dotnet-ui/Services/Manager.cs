@@ -569,7 +569,7 @@ namespace PathwinderMgt.Services
                 catch { pending.Add(file); }
             }
 
-            IniWriter.Write(Path.Combine(dir, "Pathwinder.ini"), effectiveRules);
+            IniWriter.Write(Path.Combine(dir, "Pathwinder.ini"), effectiveRules, p.RedirectMode);
             WriteHookshotIni(dir, p.HookshotLogEnabled);
             return pending;
         }
@@ -628,10 +628,10 @@ namespace PathwinderMgt.Services
         /// - HookshotDll 与 HookshotExe 同在工作区目录，必须显式让它从自身目录找 hook module；
         /// - 存在非空 ini 时 UseConfiguredHookModules 默认为 yes（只加载列出的模块），
         ///   因此必须显式写 HookModule = Pathwinder，漏写会导致 Pathwinder 根本不加载；
-        /// - LogLevel：0=完全禁用（默认，桌面零日志）；2=错误+警告（诊断用，发现未授权子进程）。
+        /// - LogLevel：0=完全禁用（默认，桌面零日志）；5=SuperDebug（最详细，勾选诊断日志时使用）。
         /// </summary>
         public static string BuildHookshotIni(bool logEnabled) =>
-            $"LogLevel = {(logEnabled ? 2 : 0)}\r\n" +
+            $"LogLevel = {(logEnabled ? 5 : 0)}\r\n" +
             "LoadHookModulesFromHookshotDirectory = yes\r\n" +
             "HookModule = Pathwinder\r\n";
 
@@ -655,9 +655,85 @@ namespace PathwinderMgt.Services
             string content = File.ReadAllText(ini);
             string updated = System.Text.RegularExpressions.Regex.Replace(
                 content, @"(?m)^(\s*LogLevel\s*=\s*)\d\s*$",
-                "${1}" + (p.HookshotLogEnabled ? "2" : "0"));
+                "${1}" + (p.HookshotLogEnabled ? "5" : "0"));
             if (!string.Equals(updated, content, StringComparison.Ordinal))
                 File.WriteAllText(ini, updated);
+        }
+
+        /// <summary>
+        /// 读取工作区 Pathwinder.ini 中首个 RedirectMode 配置并归一化为 ProgramEntry.RedirectMode* 常量；
+        /// 文件缺失或未配置时返回 null（内核把未配置当严格 Simple）。
+        /// </summary>
+        public static string ReadPathwinderRedirectMode(ProgramEntry p)
+        {
+            string ini = Path.Combine(AppPaths.WorkDir(p.Id), "Pathwinder.ini");
+            if (!File.Exists(ini)) return null;
+            try
+            {
+                foreach (string raw in File.ReadLines(ini))
+                {
+                    string line = raw.Trim();
+                    if (!line.StartsWith("RedirectMode", StringComparison.OrdinalIgnoreCase)) continue;
+                    int eq = line.IndexOf('=');
+                    if (eq < 0) continue;
+                    string value = line.Substring(eq + 1).Trim();
+                    if (value.Equals("Simple", StringComparison.OrdinalIgnoreCase))
+                        return ProgramEntry.RedirectModeSimple;
+                    if (value.Equals("Simple Pro", StringComparison.OrdinalIgnoreCase) ||
+                        value.Equals("SimplePro", StringComparison.OrdinalIgnoreCase))
+                        return ProgramEntry.RedirectModeSimplePro;
+                    if (value.Equals("Overlay", StringComparison.OrdinalIgnoreCase))
+                        return ProgramEntry.RedirectModeOverlay;
+                    return null; // 无法识别的值按未配置处理
+                }
+            }
+            catch { /* 读取失败按未配置处理，详情页会补默认 */ }
+            return null;
+        }
+
+        /// <summary>
+        /// 仅更新工作区 Pathwinder.ini 各规则节的 RedirectMode（用户在详情页切换模式时调用，立即生效不重建工作区）。
+        /// 外科手术式改写：删除既有 RedirectMode 行并按模式补写（Simple 省略该行），其余内容（含手动加的 LogLevel）原样保留。
+        /// </summary>
+        public static void SetPathwinderRedirectMode(ProgramEntry p)
+        {
+            string ini = Path.Combine(AppPaths.WorkDir(p.Id), "Pathwinder.ini");
+            if (!File.Exists(ini)) return; // 未添加指令，Prepare 时会按记录写入
+            string modeLine = p.RedirectMode switch
+            {
+                ProgramEntry.RedirectModeSimplePro => "RedirectMode = Simple Pro",
+                ProgramEntry.RedirectModeOverlay => "RedirectMode = Overlay",
+                _ => null // Simple：省略该行
+            };
+            var lines = File.ReadAllLines(ini);
+            var output = new List<string>(lines.Length + 4);
+            bool inRuleSection = false;
+            bool pendingInsert = false; // 已进入规则节且待补写 RedirectMode 行（插到 TargetDirectory 之后）
+            foreach (string line in lines)
+            {
+                string trimmed = line.TrimStart();
+                if (trimmed.StartsWith("["))
+                {
+                    if (pendingInsert) { output.Add(modeLine); pendingInsert = false; } // 上一节缺 TargetDirectory，节尾补写
+                    inRuleSection = trimmed.StartsWith("[FilesystemRule:", StringComparison.OrdinalIgnoreCase);
+                    output.Add(line);
+                    if (inRuleSection && modeLine != null) pendingInsert = true;
+                    continue;
+                }
+                if (inRuleSection &&
+                    trimmed.StartsWith("RedirectMode", StringComparison.OrdinalIgnoreCase) &&
+                    trimmed.Contains('='))
+                    continue; // 删除既有 RedirectMode 行
+                output.Add(line);
+                if (pendingInsert &&
+                    trimmed.StartsWith("TargetDirectory", StringComparison.OrdinalIgnoreCase))
+                {
+                    output.Add(modeLine);
+                    pendingInsert = false;
+                }
+            }
+            if (pendingInsert) output.Add(modeLine);
+            File.WriteAllLines(ini, output);
         }
     }
 
@@ -905,6 +981,7 @@ namespace PathwinderMgt.Services
                 OriginalWorkingDir = src.OriginalWorkingDir,
                 Architecture = src.Architecture,
                 HookshotLogEnabled = src.HookshotLogEnabled,
+                RedirectMode = src.RedirectMode,
                 Excluded = src.Excluded,
                 IsCopy = true, // 拷贝记录：删除时不恢复快捷方式，直接删除落点文件
                 OverrideRules = CopyRulesWithNumber(src.OverrideRules, baseName, newName, number)

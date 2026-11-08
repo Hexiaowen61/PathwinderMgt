@@ -642,7 +642,8 @@ namespace PathwinderMgt.Services
 
     public static class IniWriter
     {
-        public static void Write(string iniPath, List<Rule> rules)
+        /// <param name="redirectMode">程序级重定向模式（ProgramEntry.RedirectMode*），规则未设独立模式时使用；Simple 省略该行（内核缺省即 Simple）。</param>
+        public static void Write(string iniPath, List<Rule> rules, string redirectMode)
         {
             try
             {
@@ -651,9 +652,17 @@ namespace PathwinderMgt.Services
                 {
                     foreach (var r in rules)
                     {
+                        // 规则级独立模式（自定义）优先，否则跟随程序级；Simple 省略该行，与上游默认配置兼容
+                        string modeLine = (r.RedirectMode ?? redirectMode) switch
+                        {
+                            ProgramEntry.RedirectModeSimplePro => "RedirectMode = Simple Pro",
+                            ProgramEntry.RedirectModeOverlay => "RedirectMode = Overlay",
+                            _ => null
+                        };
                         sb.AppendLine($"[FilesystemRule:{Sanitize(r.Name)}]");
                         sb.AppendLine($"OriginDirectory = {r.OriginDirectory.Trim()}");
                         sb.AppendLine($"TargetDirectory = {r.TargetDirectory.Trim()}");
+                        if (modeLine != null) sb.AppendLine(modeLine);
                         if (r.FilePatterns != null)
                         {
                             foreach (var p in r.FilePatterns)

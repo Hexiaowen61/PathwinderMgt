@@ -57,18 +57,31 @@
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="位数" VerticalAlignment="Center" Margin="0,0,8,8"/>
                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,8">
-                    <ComboBox Name="CmbArch" Width="150" SelectionChanged="CmbArch_SelectionChanged"/>
+                    <ComboBox Name="CmbArch" Width="150" Style="{StaticResource ComboBoxBox}" SelectionChanged="CmbArch_SelectionChanged"/>
                     <TextBlock Name="TxtArchWarn" Text="ARM64 不受支持，请手动选择 x86 或 x64"
                                Foreground="#DC2626" VerticalAlignment="Center" Margin="10,0,0,0"
                                Visibility="Collapsed"/>
                 </StackPanel>
 
-                <TextBlock Grid.Row="1" Grid.Column="2" Text="快捷方式" VerticalAlignment="Center" Margin="0,0,8,8"/>
-                <TextBlock Grid.Row="1" Grid.Column="3" Name="TxtShortcut" VerticalAlignment="Center"
-                           Foreground="#6B7280" Margin="0,0,0,8" TextTrimming="CharacterEllipsis"/>
+                <!-- 模式切换：立即重写工作区 Pathwinder.ini 生效；Simple=严格，SimplePro=读回退（默认），Overlay=合并目录视图，自定义=逐规则独立设置 -->
+                <TextBlock Grid.Row="1" Grid.Column="2" Text="模式切换" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                <ComboBox Grid.Row="1" Grid.Column="3" Name="CmbMode" Width="220"
+                          Style="{StaticResource ComboBoxBox}"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Center" Margin="0,0,0,8"
+                          SelectionChanged="CmbMode_SelectionChanged">
+                    <ComboBoxItem Content="Simple（严格，不回退）"/>
+                    <ComboBoxItem Content="SimplePro（读回退，默认）"/>
+                    <ComboBoxItem Content="Overlay（合并目录视图）"/>
+                    <ComboBoxItem Content="自定义"/>
+                </ComboBox>
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="目标 exe" VerticalAlignment="Center" Margin="0,0,8,8"/>
-                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Name="TxtTarget" VerticalAlignment="Center"
+                <TextBlock Grid.Row="2" Grid.Column="1" Name="TxtTarget" VerticalAlignment="Center"
+                           Foreground="#6B7280" Margin="0,0,20,8" TextTrimming="CharacterEllipsis"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="2" Text="快捷方式" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                <TextBlock Grid.Row="2" Grid.Column="3" Name="TxtShortcut" VerticalAlignment="Center"
                            Foreground="#6B7280" Margin="0,0,0,8" TextTrimming="CharacterEllipsis"/>
 
                 <!-- 指令内容：已添加指令时显示快捷方式的完整参数（文档 5.2.2）。用只读 TextBox 以便鼠标选中复制 -->
@@ -82,7 +95,7 @@
                 <!-- Hookshot 诊断日志开关（默认关闭，LogLevel=0；开启后经快捷方式启动会在桌面生成日志，管理器自动清理并补子进程授权） -->
                 <TextBlock Grid.Row="4" Grid.Column="0" Text="Hookshot 日志" VerticalAlignment="Center" Margin="0,0,8,0"/>
                 <CheckBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Name="ChkHookshotLog"
-                          Content="启用 Hookshot 诊断日志（排查子进程注入问题时开启，桌面会产生日志，管理器自动清理）"
+                          Content="启用 Hookshot 诊断日志（排查注入问题时开启，桌面会产生日志，管理器自动清理）"
                           VerticalAlignment="Center" Foreground="#6B7280"
                           Checked="ChkHookshotLog_Changed" Unchecked="ChkHookshotLog_Changed"/>
 

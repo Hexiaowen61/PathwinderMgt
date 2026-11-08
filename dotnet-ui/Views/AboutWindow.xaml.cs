@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -19,8 +21,10 @@ namespace PathwinderMgt.Views
         {
             InitializeComponent();
             var ver = Assembly.GetExecutingAssembly().GetName().Version;
-            TxtVersion.Text = ver != null ? $"版本 {ver.Major}.{ver.Minor}.{ver.Build}" : "版本 1.0.0";
-            TxtChangelog.Text = LoadChangelog();
+            Title = ver != null
+                ? $"关于 Pathwinder 管理器 v{ver.Major}.{ver.Minor}.{ver.Build}"
+                : "关于 Pathwinder 管理器 v1.0.0";
+            TxtChangelog.Document = MiniMarkdown.ToFlowDocument(LoadChangelog());
         }
 
         /// <summary>读取随程序分发的更新记录文件（resources\changelog.txt）。</summary>
@@ -56,6 +60,138 @@ namespace PathwinderMgt.Views
             await ShowCopiedHint(btn);
         }
 
+        private const string ReleasesApiUrl =
+            "https://api.github.com/repos/Hexiaowen61/PathwinderMgt/releases/latest";
+        private const string ReleasesLatestUrl =
+            "https://github.com/Hexiaowen61/PathwinderMgt/releases/latest";
+        private const string ReleasesPageUrl =
+            "https://github.com/Hexiaowen61/PathwinderMgt/releases";
+
+        private sealed class ReleaseInfo
+        {
+            public string Tag { get; init; }
+            public string Notes { get; init; }
+            public string PageUrl { get; init; }
+        }
+
+        /// <summary>点击「检查更新」：查询 GitHub 最新 Release，有新版本时询问是否打开浏览器下载。</summary>
+        private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            BtnCheckUpdate.IsEnabled = false;
+            BtnCheckUpdate.Content = "检查中…";
+            CheckUpdateProgress.Visibility = Visibility.Visible;
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+                http.DefaultRequestHeaders.UserAgent.ParseAdd("PathwinderMgt");
+
+                var info = await FetchLatestReleaseAsync(http);
+                if (info == null)
+                {
+                    MessageBox.Show("暂未发布任何版本，可前往下载页查看：" + Environment.NewLine + ReleasesPageUrl,
+                        "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                Version latest = ParseReleaseVersion(info.Tag);
+                if (latest == null)
+                {
+                    MessageBox.Show($"未能识别最新版本号（{info.Tag}）。" + Environment.NewLine +
+                                    "可前往下载页查看：" + ReleasesPageUrl,
+                        "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                var current = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+                var currentShort = new Version(current.Major, current.Minor, Math.Max(current.Build, 0));
+
+                if (latest > currentShort)
+                {
+                    string notes = string.IsNullOrWhiteSpace(info.Notes) ? "（该版本未提供更新说明）" : info.Notes.Trim();
+                    if (notes.Length > 800) notes = notes.Substring(0, 800) + "…";
+                    var result = MessageBox.Show(
+                        $"发现新版本 {info.Tag}（当前 {currentShort}）。" + Environment.NewLine + Environment.NewLine +
+                        notes + Environment.NewLine + Environment.NewLine +
+                        "点击「是」打开浏览器下载，点击「否」取消。",
+                        "检查更新", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    if (result == MessageBoxResult.Yes)
+                        Process.Start(new ProcessStartInfo(info.PageUrl) { UseShellExecute = true });
+                }
+                else
+                {
+                    MessageBox.Show($"当前已是最新版本（{currentShort}）。",
+                        "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception)
+            {
+                MessageBox.Show("检查更新失败，请检查网络连接后重试。" + Environment.NewLine +
+                                "也可以直接打开下载页查看最新版本：" + ReleasesPageUrl,
+                    "检查更新", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                CheckUpdateProgress.Visibility = Visibility.Collapsed;
+                BtnCheckUpdate.Content = "检查更新";
+                BtnCheckUpdate.IsEnabled = true;
+            }
+        }
+
+        /// <summary>先走 GitHub API（可获得更新说明）；接口限流或不可用时，回退到 releases/latest 的重定向地址。</summary>
+        private static async Task<ReleaseInfo> FetchLatestReleaseAsync(HttpClient http)
+        {
+            try
+            {
+                using var response = await http.GetAsync(ReleasesApiUrl);
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    var root = doc.RootElement;
+                    string tag = root.TryGetProperty("tag_name", out var tagNode) ? tagNode.GetString() : null;
+                    string body = root.TryGetProperty("body", out var bodyNode) ? bodyNode.GetString() ?? string.Empty : string.Empty;
+                    string pageUrl = root.TryGetProperty("html_url", out var urlNode) && !string.IsNullOrWhiteSpace(urlNode.GetString())
+                        ? urlNode.GetString() : ReleasesPageUrl;
+                    if (!string.IsNullOrWhiteSpace(tag))
+                        return new ReleaseInfo { Tag = tag, Notes = body, PageUrl = pageUrl };
+                }
+            }
+            catch
+            {
+                // API 不可用（限流、被墙等），继续尝试下面的回退方案
+            }
+
+            // 回退：/releases/latest 会重定向到 /releases/tag/<tag>，不消耗 API 配额
+            using var pageResponse = await http.GetAsync(ReleasesLatestUrl);
+            string finalUrl = pageResponse.RequestMessage?.RequestUri?.AbsoluteUri;
+            if (!string.IsNullOrEmpty(finalUrl))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(finalUrl, @"/releases/tag/([^/?#]+)");
+                if (match.Success)
+                {
+                    return new ReleaseInfo
+                    {
+                        Tag = Uri.UnescapeDataString(match.Groups[1].Value),
+                        Notes = string.Empty,
+                        PageUrl = finalUrl
+                    };
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>把 "v1.0.3" 之类的 Release tag 解析成 Version；无法解析时返回 null。</summary>
+        private static Version ParseReleaseVersion(string tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag)) return null;
+            var m = System.Text.RegularExpressions.Regex.Match(tag, @"(\d+)\s*\.\s*(\d+)(?:\s*\.\s*(\d+))?");
+            if (!m.Success) return null;
+            int major = int.Parse(m.Groups[1].Value);
+            int minor = int.Parse(m.Groups[2].Value);
+            int build = m.Groups[3].Success ? int.Parse(m.Groups[3].Value) : 0;
+            return new Version(major, minor, build);
+        }
+
         private async void ShareButton_Click(object sender, RoutedEventArgs e)
         {
             var sb = new StringBuilder();
@@ -68,7 +204,7 @@ namespace PathwinderMgt.Views
             sb.AppendLine();
             sb.AppendLine("担心涉及的文件夹太多？你可以添加多条重定向规则，或直接指定一个上层目录（如 “C:\\ddd”）一并覆盖。");
             sb.AppendLine();
-            sb.AppendLine("下载地址：https://hexiaowen.lanzouw.com/b00g46ub");
+            sb.AppendLine("下载地址：https://github.com/Hexiaowen61/PathwinderMgt/releases");
 
             Clipboard.SetText(sb.ToString());
             await ShowCopiedHint(ShareButton, "已复制到剪贴板 ✓");

@@ -18,11 +18,11 @@
 
 [Setup]
 AppName=Pathwinder管理器
-AppVersion=1.0.2
+AppVersion=1.0.3
 ; 关键：设置 Setup.exe 自身的文件版本（鼠标悬停看到的版本号）
 ; 不加此项时默认 0.0.0.0
-VersionInfoVersion=1.0.2.0
-VersionInfoProductVersion=1.0.2.0
+VersionInfoVersion=1.0.3.0
+VersionInfoProductVersion=1.0.3.0
 VersionInfoCompany=Pathwinder
 VersionInfoProductName=Pathwinder管理器
 AppPublisher=Pathwinder

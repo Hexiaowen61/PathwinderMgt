@@ -46,6 +46,30 @@ namespace PathwinderMgt.Views
 
             ChkHookshotLog.IsChecked = p.HookshotLogEnabled;
             ChkExcluded.IsChecked = p.Excluded;
+
+            // 自定义状态：任一规则带独立模式。自定义时跳过 ini 程序级回填
+            //（各节模式可能不同，回填会把程序级错改成首节模式，且不应触发补写）
+            bool custom = p.OverrideRules.Any(r => r.RedirectMode != null);
+            if (!custom)
+            {
+                // 模式切换：以工作区 ini 为准；已有指令但 ini 未配置 RedirectMode 时按默认 SimplePro 补写入 ini
+                //（内核把未配置当严格 Simple，不显式补写会失去读回退）；未添加指令时沿用记录值。
+                string iniMode = WorkspaceManager.ReadPathwinderRedirectMode(p);
+                if (iniMode != null)
+                    p.RedirectMode = iniMode;
+                else if (File.Exists(Path.Combine(AppPaths.WorkDir(p.Id), "Pathwinder.ini")))
+                {
+                    p.RedirectMode = ProgramEntry.RedirectModeSimplePro;
+                    WorkspaceManager.SetPathwinderRedirectMode(p);
+                    ConfigManager.Save(_cfg);
+                }
+            }
+            CmbMode.SelectedIndex = custom ? 3 : p.RedirectMode switch
+            {
+                ProgramEntry.RedirectModeSimple => 0,
+                ProgramEntry.RedirectModeOverlay => 2,
+                _ => 1
+            };
             _loading = false;
 
             _dirty = false;
@@ -53,13 +77,38 @@ namespace PathwinderMgt.Views
             RefreshManagedState();
         }
 
+        private RulesPanel _rulesPanel;
+
         private void RebuildRulesPanel()
         {
-            var panel = new RulesPanel(_p.OverrideRules);
+            bool custom = _p.OverrideRules.Any(r => r.RedirectMode != null);
+            var panel = new RulesPanel(_p.OverrideRules, custom, () => _p.RedirectMode);
+            _rulesPanel = panel;
             panel.Changed += (_, _) =>
             {
                 ConfigManager.Save(_cfg);
-                _dirty = true;
+                // 已受管：规则立即写入工作区 Pathwinder.ini（与模式/日志开关一致，改完即时生效，
+                // 不再依赖“更新指令”）。Prepare 幂等：硬链接已指向 payload 时跳过，仅重写 ini。
+                if (IsCurrentlyManaged())
+                {
+                    try
+                    {
+                        var pending = WorkspaceManager.Prepare(_p, _p.OverrideRules);
+                        if (pending.Count > 0)
+                            _service.Log.Warn($"规则已写入 ini，但工作区有文件被运行中的程序占用：" +
+                                              $"{string.Join("、", pending)}");
+                        _dirty = false;
+                    }
+                    catch (Exception ex)
+                    {
+                        // ini 写入失败：回退为显示“更新指令”，用户可手动重试
+                        _service.Log.Error($"规则变更同步 ini 失败：{ex.Message}");
+                        MessageBox.Show("规则已保存，但同步到工作区失败：" + ex.Message +
+                                        "\n可点击「更新指令」重试。", "同步失败",
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+                        _dirty = true;
+                    }
+                }
                 RefreshManagedState();
             };
             PanelHost.Content = panel;
@@ -135,6 +184,72 @@ namespace PathwinderMgt.Views
             }
             catch (PwException ex) { HandleError(ex); }
             catch (Exception ex) { HandleGeneric(ex); }
+        }
+
+        // ---------------- 模式切换（立即重写 ini，不提示、不置脏）----------------
+
+        /// <summary>自定义状态：任一规则带独立模式（详情页“自定义”选项为非持久化的 UI 推导）。</summary>
+        private bool HasCustomRuleModes => _p.OverrideRules.Any(r => r.RedirectMode != null);
+
+        private void CmbMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loading) return;
+
+            // 切到「自定义」：把程序级当前值物化到每条规则，规则级下拉变为可编辑；ini 内容等价不变
+            if (CmbMode.SelectedIndex == 3)
+            {
+                if (!HasCustomRuleModes)
+                {
+                    foreach (var r in _p.OverrideRules)
+                        r.RedirectMode = _p.RedirectMode;
+                    ConfigManager.Save(_cfg);
+                }
+                _rulesPanel?.SetCustomMode(true);
+                return;
+            }
+
+            string mode = CmbMode.SelectedIndex switch
+            {
+                0 => ProgramEntry.RedirectModeSimple,
+                2 => ProgramEntry.RedirectModeOverlay,
+                _ => ProgramEntry.RedirectModeSimplePro
+            };
+
+            // 自定义 → 非自定义：覆盖前确认（清除各规则独立模式不可逆）
+            if (HasCustomRuleModes)
+            {
+                string display = CmbMode.SelectedIndex switch { 0 => "Simple", 2 => "Overlay", _ => "SimplePro" };
+                if (MessageBox.Show($"将清除各规则的独立模式，统一为「{display}」，是否继续？",
+                        "模式切换", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+                {
+                    _loading = true;
+                    CmbMode.SelectedIndex = 3; // 回退到自定义
+                    _loading = false;
+                    return;
+                }
+                foreach (var r in _p.OverrideRules)
+                    r.RedirectMode = null;
+            }
+
+            if (mode == _p.RedirectMode)
+            {
+                // 模式未变但可能刚清除了规则级值：保存并刷新面板状态
+                ConfigManager.Save(_cfg);
+                _rulesPanel?.SetCustomMode(false);
+                return;
+            }
+            _p.RedirectMode = mode;
+            try
+            {
+                WorkspaceManager.SetPathwinderRedirectMode(_p); // 未添加指令时为空操作，Prepare 时按记录写入
+                ConfigManager.Save(_cfg);
+                _rulesPanel?.SetCustomMode(false);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("更新重定向模式失败：" + ex.Message, "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
 
         private void ChkHookshotLog_Changed(object sender, RoutedEventArgs e)
