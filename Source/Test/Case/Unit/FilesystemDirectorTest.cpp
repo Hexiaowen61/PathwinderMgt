@@ -42,11 +42,18 @@ namespace PathwinderTest
   /// @return Newly-constructed filesystem director object.
   static FilesystemDirector MakeFilesystemDirector(TFilesystemRulesByName&& filesystemRules)
   {
+    TCaseInsensitiveStringSet originDirectories;
+    TCaseInsensitiveStringSet targetDirectories;
+    TCaseSensitiveStringSet filesystemRuleNames;
     TFilesystemRulePrefixTree filesystemRulesByOriginDirectory;
     TFilesystemRuleIndexByName filesystemRulesByName;
 
     for (auto& filesystemRulePair : filesystemRules)
     {
+      originDirectories.emplace(filesystemRulePair.second.GetOriginDirectoryFullPath());
+      targetDirectories.emplace(filesystemRulePair.second.GetTargetDirectoryFullPath());
+      filesystemRuleNames.emplace(filesystemRulePair.second.GetName());
+
       const auto destinationRelatedRulesContainerNode =
           filesystemRulesByOriginDirectory
               .Emplace(filesystemRulePair.second.GetOriginDirectoryFullPath())
@@ -62,7 +69,11 @@ namespace PathwinderTest
     }
 
     return FilesystemDirector(
-        std::move(filesystemRulesByOriginDirectory), std::move(filesystemRulesByName));
+        std::move(originDirectories),
+        std::move(targetDirectories),
+        std::move(filesystemRuleNames),
+        std::move(filesystemRulesByOriginDirectory),
+        std::move(filesystemRulesByName));
   }
 
   /// Convenience helper for evaluating an expected outcome of a container of rules not being
@@ -1317,5 +1328,29 @@ namespace PathwinderTest
         director.GetInstructionForDirectoryEnumeration(associatedPath, realOpenedPath);
 
     TEST_ASSERT(actualDirectoryEnumerationInstruction == expectedDirectoryEnumerationInstruction);
+  }
+
+  // Creates a filesystem director and queries it with a variety of file paths to determine if they
+  // are recognized as existing inside a redirection target directory, which is where redirected
+  // data really lives and therefore where child processes have to be authorized for injection.
+  TEST_CASE(FilesystemDirector_IsPathWithinTargetDirectory_Nominal)
+  {
+    const FilesystemDirector director(MakeFilesystemDirector({
+        {L"1", FilesystemRule(L"1", L"C:\\Origin1", L"D:\\Target1")},
+        {L"2", FilesystemRule(L"2", L"C:\\Origin2", L"D:\\Target2\\Nested")},
+    }));
+
+    TEST_ASSERT(true == director.IsPathWithinTargetDirectory(L"D:\\Target1"));
+    TEST_ASSERT(true == director.IsPathWithinTargetDirectory(L"D:\\Target1\\file.exe"));
+    TEST_ASSERT(true == director.IsPathWithinTargetDirectory(L"D:\\Target1\\subdir\\file.exe"));
+    TEST_ASSERT(true == director.IsPathWithinTargetDirectory(L"\\\\?\\D:\\Target1\\file.exe"));
+    TEST_ASSERT(true == director.IsPathWithinTargetDirectory(L"d:\\target1\\file.exe"));
+    TEST_ASSERT(true == director.IsPathWithinTargetDirectory(L"D:\\Target2\\Nested\\file.exe"));
+
+    TEST_ASSERT(false == director.IsPathWithinTargetDirectory(L"D:\\Target"));
+    TEST_ASSERT(false == director.IsPathWithinTargetDirectory(L"D:\\Target1Extra\\file.exe"));
+    TEST_ASSERT(false == director.IsPathWithinTargetDirectory(L"D:\\Target2\\file.exe"));
+    TEST_ASSERT(false == director.IsPathWithinTargetDirectory(L"C:\\Origin1\\file.exe"));
+    TEST_ASSERT(false == director.IsPathWithinTargetDirectory(L""));
   }
 } // namespace PathwinderTest

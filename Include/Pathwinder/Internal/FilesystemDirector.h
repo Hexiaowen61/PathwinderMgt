@@ -24,6 +24,7 @@
 #include "FilesystemInstruction.h"
 #include "FilesystemRule.h"
 #include "PrefixTree.h"
+#include "Strings.h"
 
 namespace Pathwinder
 {
@@ -315,6 +316,29 @@ namespace Pathwinder
     inline bool HasRuleWithOriginDirectory(std::wstring_view directoryFullPath) const
     {
       return filesystemRulesByOriginDirectory.Contains(directoryFullPath);
+    }
+
+    /// Determines if the specified file path exists inside the target directory of any rule. Such a
+    /// path is where redirected data really lives, so anything that this process starts from there
+    /// belongs to the redirected application and has to participate in the same redirection.
+    /// @param [in] absoluteFilePath Absolute path to check. A Windows namespace prefix is optional.
+    /// @return `true` if the path is the target directory itself or a descendant of one, `false`
+    /// otherwise.
+    inline bool IsPathWithinTargetDirectory(std::wstring_view absoluteFilePath) const
+    {
+      absoluteFilePath.remove_prefix(Strings::PathGetWindowsNamespacePrefix(absoluteFilePath).length());
+
+      for (const std::wstring& targetDirectory : targetDirectories)
+      {
+        if (Infra::Strings::StartsWithCaseInsensitive(absoluteFilePath,
+                                                      std::wstring_view(targetDirectory)) &&
+            ((absoluteFilePath.size() == targetDirectory.size()) ||
+                (L'\\' == absoluteFilePath[targetDirectory.size()]) ||
+                (L'/' == absoluteFilePath[targetDirectory.size()])))
+          return true;
+      }
+
+      return false;
     }
 
     /// Determines if the specified file path, which is already absolute, exists as a valid
