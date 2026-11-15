@@ -14,6 +14,10 @@ namespace PathwinderMgt.Views
 
         private readonly AppConfig _cfg;
         private readonly Rule _builtInRule; // 内置全局规则（全局默认路径即其 OriginDirectory）
+        private readonly string _initialTheme; // 打开设置前的主题，点「取消」时恢复
+        private readonly string _initialPrefix; // 以下四个是「打开时」的快照，只有改动过才允许保存
+        private readonly string _initialGlobalOrigin;
+        private readonly bool _initialSuppressVcRuntime;
 
         public SettingsWindow(string currentPrefix, AppConfig cfg)
         {
@@ -22,11 +26,61 @@ namespace PathwinderMgt.Views
             _cfg = cfg;
             _builtInRule = cfg?.GlobalRules?.Find(r => r.BuiltIn);
 
-            PrefixBox.Text = currentPrefix;
-            PrefixBox.TextChanged += (_, _) => UpdatePreview();
-            UpdatePreview();
+            // 先记录初始值，再填充控件（填充过程的 TextChanged 也能正确算出「未改动」）
+            _initialTheme = ThemeManager.Normalize(ThemeManager.Current);
+            _initialGlobalOrigin = CurrentGlobalOrigin();
+            _initialSuppressVcRuntime = _cfg?.Settings?.SuppressVcRuntimePrompt == true;
+            _initialPrefix = currentPrefix ?? "";
 
-            GlobalOriginBox.Text = CurrentGlobalOrigin();
+            PrefixBox.Text = _initialPrefix;
+            GlobalOriginBox.Text = _initialGlobalOrigin;
+            ChkSuppressVcRuntime.IsChecked = _initialSuppressVcRuntime;
+
+            PrefixBox.TextChanged += (_, _) => { UpdatePreview(); UpdateDirty(); };
+            GlobalOriginBox.TextChanged += (_, _) => UpdateDirty();
+            ChkSuppressVcRuntime.Checked += (_, _) => UpdateDirty();
+            ChkSuppressVcRuntime.Unchecked += (_, _) => UpdateDirty();
+
+            UpdatePreview();
+            UpdateThemeButton();
+            UpdateDirty();
+        }
+
+        /// <summary>「保存」按钮只在设置项相对打开时有改动才可用。</summary>
+        private void UpdateDirty()
+        {
+            bool dirty =
+                !string.Equals(PrefixBox.Text ?? "", _initialPrefix, StringComparison.Ordinal) ||
+                !string.Equals(NormalizePath(GlobalOriginBox.Text), NormalizePath(_initialGlobalOrigin),
+                    StringComparison.OrdinalIgnoreCase) ||
+                (ChkSuppressVcRuntime.IsChecked == true) != _initialSuppressVcRuntime ||
+                !string.Equals(ThemeManager.Current, _initialTheme, StringComparison.Ordinal);
+            BtnSave.IsEnabled = dirty;
+        }
+
+        private static string NormalizePath(string path) => (path ?? "").Trim().TrimEnd('\\');
+
+        /// <summary>主题按钮文案始终显示当前实际生效的主题。</summary>
+        private void UpdateThemeButton()
+        {
+            BtnTheme.Content = ThemeManager.IsDark ? "当前主题：深色" : "当前主题：浅色";
+            BtnTheme.ToolTip = ThemeManager.IsDark ? "点击切换为浅色主题" : "点击切换为深色主题";
+        }
+
+        /// <summary>点击切换主题：立即生效，确定时写入配置。</summary>
+        private void BtnTheme_Click(object sender, RoutedEventArgs e)
+        {
+            ThemeManager.Apply(ThemeManager.IsDark ? ThemeManager.Light : ThemeManager.Dark);
+            UpdateThemeButton();
+            UpdateDirty();
+        }
+
+        /// <summary>把当前主题写入 config.json（无变化时不写盘）。</summary>
+        private void PersistTheme()
+        {
+            if (_cfg == null || _cfg.Settings.Theme == ThemeManager.Current) return;
+            _cfg.Settings.Theme = ThemeManager.Current;
+            ConfigManager.Save(_cfg);
         }
 
         /// <summary>当前已保存的全局默认路径（内置规则源目录；无配置时显示默认值）。</summary>
@@ -37,31 +91,17 @@ namespace PathwinderMgt.Views
 
         /// <summary>打开快捷方式恢复窗口（独立工具，使用已保存的前缀）。
         /// 保存后关闭本窗口：WPF 模态窗口存活期间，同线程其他窗口的 OLE 拖放目标会返回 None（禁止光标），
-        /// 恢复窗口必须脱离模态环境才能正常接收拖入。</summary>
+        /// 恢复窗口必须脱离模态环境才能正常接收拖入。
+        /// 注意：这里不落盘任何设置——全局默认路径等改动只有点「保存」才生效。</summary>
         private void BtnRestoreShortcut_Click(object sender, RoutedEventArgs e)
         {
-            if (!TrySaveGlobalOrigin()) return;
-
             PrefixResult = ConfigManager.ValidatePrefix(PrefixBox.Text);
 
             var win = new RestoreWindow(PrefixResult);
             win.Show();
             win.Activate();
+            PersistTheme(); // 主题是即时预览项，本窗口关闭后保持当前外观
             DialogResult = true;
-        }
-
-        /// <summary>打开日志目录（原先主窗口标题栏的「日志」按钮）。</summary>
-        private void BtnOpenLogs_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                Directory.CreateDirectory(AppPaths.LogDir);
-                Process.Start(new ProcessStartInfo(AppPaths.LogDir) { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, ex.Message, "无法打开日志目录", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
         }
 
         // ---------------- 全局默认路径 ----------------
@@ -157,11 +197,25 @@ namespace PathwinderMgt.Views
 
             // 2. 保存前缀
             PrefixResult = ConfigManager.ValidatePrefix(PrefixBox.Text);
+
+            // 3. 保存「缺少运行库时不再提示」开关
+            bool suppress = ChkSuppressVcRuntime.IsChecked == true;
+            if (_cfg != null && _cfg.Settings.SuppressVcRuntimePrompt != suppress)
+            {
+                _cfg.Settings.SuppressVcRuntimePrompt = suppress;
+                ConfigManager.Save(_cfg);
+            }
+
+            // 4. 保存主题（预览阶段已应用，这里只落盘）
+            PersistTheme();
+
             DialogResult = true;
         }
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)
         {
+            // 取消：撤销预览阶段的主题切换
+            ThemeManager.Apply(_initialTheme);
             DialogResult = false;
         }
     }

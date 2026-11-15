@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="程序详情" Height="680" Width="900" MinWidth="900" MinHeight="680"
         Icon="pack://application:,,,/app.ico"
-        Background="#F5F6F8"
+        Background="{DynamicResource WindowBg}"
+        Foreground="{DynamicResource TextBody}"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
         FontFamily="Microsoft YaHei" FontSize="13">
@@ -16,13 +17,13 @@
         </Grid.RowDefinitions>
 
         <!-- 标题栏 -->
-        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="16,12">
+        <Border Grid.Row="0" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="16,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="程序详情" FontSize="16" FontWeight="SemiBold" Foreground="#111827"/>
+                <TextBlock Grid.Column="0" Text="程序详情" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
                 <!-- 拷贝：复制当前记录为新记录（显示名/目标路径自动编号），详情页切换到新记录 -->
                 <Button Grid.Column="1" Style="{StaticResource ToolbarBtn}" Content="拷贝"
                         VerticalAlignment="Center" Click="BtnCopy_Click"/>
@@ -30,7 +31,7 @@
         </Border>
 
         <!-- 基本信息 -->
-        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="16,12" Margin="0">
+        <Border Grid.Row="1" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="16,12" Margin="0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -49,17 +50,17 @@
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="名称" VerticalAlignment="Center" Margin="0,0,8,8"/>
                 <TextBlock Grid.Row="0" Grid.Column="1" Name="TxtName" VerticalAlignment="Center"
-                           Foreground="#111827" Margin="0,0,20,8" TextTrimming="CharacterEllipsis"/>
+                           Foreground="{DynamicResource TextPrimary}" Margin="0,0,20,8" TextTrimming="CharacterEllipsis"/>
 
                 <TextBlock Grid.Row="0" Grid.Column="2" Text="程序 ID" VerticalAlignment="Center" Margin="0,0,8,8"/>
                 <TextBlock Grid.Row="0" Grid.Column="3" Name="TxtId" VerticalAlignment="Center"
-                           Foreground="#6B7280" FontFamily="Consolas" Margin="0,0,0,8"/>
+                           Foreground="{DynamicResource TextMuted}" FontFamily="Consolas" Margin="0,0,0,8"/>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="位数" VerticalAlignment="Center" Margin="0,0,8,8"/>
                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,8">
                     <ComboBox Name="CmbArch" Width="150" Style="{StaticResource ComboBoxBox}" SelectionChanged="CmbArch_SelectionChanged"/>
                     <TextBlock Name="TxtArchWarn" Text="ARM64 不受支持，请手动选择 x86 或 x64"
-                               Foreground="#DC2626" VerticalAlignment="Center" Margin="10,0,0,0"
+                               Foreground="{DynamicResource Danger}" VerticalAlignment="Center" Margin="10,0,0,0"
                                Visibility="Collapsed"/>
                 </StackPanel>
 
@@ -78,16 +79,16 @@
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="目标 exe" VerticalAlignment="Center" Margin="0,0,8,8"/>
                 <TextBlock Grid.Row="2" Grid.Column="1" Name="TxtTarget" VerticalAlignment="Center"
-                           Foreground="#6B7280" Margin="0,0,20,8" TextTrimming="CharacterEllipsis"/>
+                           Foreground="{DynamicResource TextMuted}" Margin="0,0,20,8" TextTrimming="CharacterEllipsis"/>
 
                 <TextBlock Grid.Row="2" Grid.Column="2" Text="快捷方式" VerticalAlignment="Center" Margin="0,0,8,8"/>
                 <TextBlock Grid.Row="2" Grid.Column="3" Name="TxtShortcut" VerticalAlignment="Center"
-                           Foreground="#6B7280" Margin="0,0,0,8" TextTrimming="CharacterEllipsis"/>
+                           Foreground="{DynamicResource TextMuted}" Margin="0,0,0,8" TextTrimming="CharacterEllipsis"/>
 
                 <!-- 指令内容：已添加指令时显示快捷方式的完整参数（文档 5.2.2）。用只读 TextBox 以便鼠标选中复制 -->
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="指令内容" VerticalAlignment="Top" Margin="0,1,8,8"/>
                 <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Name="TxtInstruction" VerticalAlignment="Top"
-                         Foreground="#6B7280" FontFamily="Consolas" Margin="0,0,0,8"
+                         Foreground="{DynamicResource TextMuted}" FontFamily="Consolas" Margin="0,0,0,8"
                          TextWrapping="Wrap" Text="（未添加指令）"
                          IsReadOnly="True" IsReadOnlyCaretVisible="True" Background="Transparent"
                          BorderThickness="0" Padding="0" VerticalScrollBarVisibility="Disabled"/>
@@ -96,25 +97,25 @@
                 <TextBlock Grid.Row="4" Grid.Column="0" Text="Hookshot 日志" VerticalAlignment="Center" Margin="0,0,8,0"/>
                 <CheckBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Name="ChkHookshotLog"
                           Content="启用 Hookshot 诊断日志（排查注入问题时开启，桌面会产生日志，管理器自动清理）"
-                          VerticalAlignment="Center" Foreground="#6B7280"
+                          VerticalAlignment="Center" Foreground="{DynamicResource TextMuted}"
                           Checked="ChkHookshotLog_Changed" Unchecked="ChkHookshotLog_Changed"/>
 
                 <!-- 标记为不管理：主列表仅保留详情按钮，批量操作（全部添加/全部移除/删除全部记录）自动跳过 -->
                 <TextBlock Grid.Row="5" Grid.Column="0" Text="管理标记" VerticalAlignment="Center" Margin="0,0,8,0"/>
                 <CheckBox Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="3" Name="ChkExcluded"
                           Content="标记为“不管理”（主列表仅保留“详情”按钮，批量操作将自动跳过该程序）"
-                          VerticalAlignment="Center" Foreground="#6B7280"
+                          VerticalAlignment="Center" Foreground="{DynamicResource TextMuted}"
                           Checked="ChkExcluded_Changed" Unchecked="ChkExcluded_Changed"/>
             </Grid>
         </Border>
 
         <!-- 规则编辑面板（登记时自动带入默认规则，可编辑）：贴边铺满，去掉四周 16px 外边距 -->
-        <Border Grid.Row="2" Background="#FFFFFF">
+        <Border Grid.Row="2" Background="{DynamicResource Surface}">
             <ContentControl Name="PanelHost"/>
         </Border>
 
         <!-- 底部操作 -->
-        <Border Grid.Row="3" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0" Padding="16,10">
+        <Border Grid.Row="3" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Padding="16,10">
             <DockPanel LastChildFill="False">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                     <Button Style="{StaticResource PrimaryBtn}" Name="BtnApply" Content="添加指令" Click="BtnApply_Click"/>

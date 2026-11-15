@@ -21,36 +21,48 @@ $ProjectRoot    = $PSScriptRoot
 $Solution       = Join-Path $ProjectRoot 'Pathwinder.sln'
 $PackageDir     = Join-Path $ProjectRoot 'Output\Package'
 $UiResources    = Join-Path $ProjectRoot 'dotnet-ui\resources'
-$VsWhere        = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$VsWhere        = if ($env:VSWHERE_PATH) { $env:VSWHERE_PATH } else { "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" }
 
 # Pathwinder engine release version (defined here on purpose, not derived from git).
+# 内核版本跟随原作，不能随 UI 打包自行升版；UI 侧只更新 zip 名里的 ui<日期> 后缀。
 $Version        = '1.2.0'
 
 if (-not (Test-Path $VsWhere)) {
-    throw "vswhere.exe not found: $VsWhere`nInstall Visual Studio 2022 or BuildTools first."
+    Write-Host "vswhere.exe not found ($VsWhere); falling back to direct MSBuild search." -ForegroundColor Yellow
 }
 
 Write-Host 'Locating MSBuild...' -ForegroundColor Cyan
 $msbuild = $null
 
 # 1) vswhere without component filter (BuildTools may not report MSBuild component ID)
-try {
-    $msbuild = & $VsWhere -latest -products * `
-        -find 'MSBuild\**\Bin\MSBuild.exe' 2>$null | Select-Object -First 1
-} catch {}
+if (Test-Path $VsWhere) {
+    try {
+        $msbuild = & $VsWhere -latest -products * `
+            -find 'MSBuild\**\Bin\MSBuild.exe' 2>$null | Select-Object -First 1
+    } catch {}
+}
+
+# 1.5) Known install directories (portable BuildTools at D:\APP\vs2022)
+if (-not $msbuild -or -not (Test-Path $msbuild)) {
+    $directCandidates = @()
+    foreach ($dir in @($env:VSINSTALLDIR, 'D:\APP\vs2022\BuildTools')) {
+        if ($dir) { $directCandidates += (Join-Path $dir 'MSBuild\Current\Bin\MSBuild.exe') }
+    }
+    $msbuild = $directCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
 
 # 2) Fallback: search Visual Studio install roots
 if (-not $msbuild -or -not (Test-Path $msbuild)) {
     $vsRoots = @(
+        $env:VSINSTALLDIR,
+        'D:\APP\vs2022\BuildTools',
         'C:\Program Files\Microsoft Visual Studio',
         'C:\Program Files (x86)\Microsoft Visual Studio'
-    )
+    ) | Where-Object { $_ -and (Test-Path $_) }
     $found = foreach ($root in $vsRoots) {
-        if (Test-Path $root) {
-            Get-ChildItem $root -Recurse -Filter MSBuild.exe -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -match '\\Bin\\MSBuild\.exe$' } |
-                Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-        }
+        Get-ChildItem $root -Recurse -Filter MSBuild.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\Bin\\MSBuild\.exe$' } |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
     }
     $msbuild = $found | Select-Object -First 1
 }

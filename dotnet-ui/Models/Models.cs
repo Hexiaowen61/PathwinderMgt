@@ -89,6 +89,11 @@ namespace PathwinderMgt.Models
         public DateTime? FirstLaunchTime { get; set; }
         /// <summary>桌面受管快捷方式的文件名前缀，添加指令时自动加上。空/非法时回退默认值。</summary>
         public string ShortcutPrefix { get; set; } = DefaultShortcutPrefix;
+        /// <summary>启动时不再提示缺少 VC++ 运行库（可在设置窗口重新开启）。</summary>
+        public bool SuppressVcRuntimePrompt { get; set; }
+
+        /// <summary>界面主题：Light（浅色，默认）/ Dark（深色）。</summary>
+        public string Theme { get; set; } = "Light";
     }
 
     /// <summary>config.json 根对象（文档第 6 节）。路径不写入配置，运行时按 exe 目录推导。</summary>

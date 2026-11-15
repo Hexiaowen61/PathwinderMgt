@@ -24,7 +24,18 @@ namespace PathwinderMgt.Views
             Title = ver != null
                 ? $"关于 Pathwinder 管理器 v{ver.Major}.{ver.Minor}.{ver.Build}"
                 : "关于 Pathwinder 管理器 v1.0.0";
-            TxtChangelog.Document = MiniMarkdown.ToFlowDocument(LoadChangelog());
+            TxtChangelog.Document = MiniMarkdown.ToFlowDocument(_changelog, MarkdownTheme.FromTheme(ThemeManager.IsDark));
+            // 主题切换后更新记录需按新配色重新渲染（FlowDocument 里的颜色是渲染时写死的）
+            ThemeManager.ThemeChanged += RenderChangelog;
+            Closed += (_, _) => ThemeManager.ThemeChanged -= RenderChangelog;
+        }
+
+        private readonly string _changelog = LoadChangelog();
+
+        /// <summary>按当前主题重新渲染更新记录。</summary>
+        private void RenderChangelog()
+        {
+            TxtChangelog.Document = MiniMarkdown.ToFlowDocument(_changelog, MarkdownTheme.FromTheme(ThemeManager.IsDark));
         }
 
         /// <summary>读取随程序分发的更新记录文件（resources\changelog.txt）。</summary>
@@ -192,6 +203,20 @@ namespace PathwinderMgt.Views
             return new Version(major, minor, build);
         }
 
+        /// <summary>打开日志目录（原先在「设置」的日志卡片里）。</summary>
+        private void BtnOpenLogs_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Directory.CreateDirectory(AppPaths.LogDir);
+                Process.Start(new ProcessStartInfo(AppPaths.LogDir) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "无法打开日志目录", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
         private async void ShareButton_Click(object sender, RoutedEventArgs e)
         {
             var sb = new StringBuilder();
@@ -221,7 +246,7 @@ namespace PathwinderMgt.Views
                 Text = hint,
                 FontSize = 12,
                 FontWeight = FontWeights.Medium,
-                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#16A34A"))
+                Foreground = PathwinderMgt.Services.ThemeManager.Brush("Success")
             };
             await Task.Delay(800);
             btn.Content = original;

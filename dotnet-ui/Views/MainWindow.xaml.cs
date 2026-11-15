@@ -33,7 +33,7 @@ namespace PathwinderMgt.Views
             public string Architecture =>
                 P.Architecture == PeDetector.Arm64 ? "ARM64" : P.Architecture.ToUpperInvariant();
             public string ArchitectureFg =>
-                P.Architecture == PeDetector.Arm64 ? "#DC2626" : "#1F2937";
+                ThemeManager.Color(P.Architecture == PeDetector.Arm64 ? "Danger" : "TextBody");
 
             internal void SetState(RowState state)
             {
@@ -41,23 +41,23 @@ namespace PathwinderMgt.Views
                 switch (state)
                 {
                     case RowState.Managed:
-                        Status = "已受管"; StatusBg = "#DCFCE7"; StatusFg = "#166534";
+                        Status = "已受管"; StatusBg = ThemeManager.Color("StatusOkBg"); StatusFg = ThemeManager.Color("StatusOkFg");
                         CanAdd = false; CanRemove = true;
                         break;
                     case RowState.Unmanaged:
-                        Status = "未受管"; StatusBg = "#FEF3C7"; StatusFg = "#92400E";
+                        Status = "未受管"; StatusBg = ThemeManager.Color("StatusWarnBg"); StatusFg = ThemeManager.Color("StatusWarnFg");
                         CanAdd = true; CanRemove = false;
                         break;
                     case RowState.PermissionDenied:
-                        Status = "无权限"; StatusBg = "#FEE2E2"; StatusFg = "#991B1B";
+                        Status = "无权限"; StatusBg = ThemeManager.Color("StatusErrorBg"); StatusFg = ThemeManager.Color("StatusErrorFg");
                         CanAdd = false; CanRemove = false;
                         break;
                     case RowState.Excluded:
-                        Status = "不管理"; StatusBg = "#E5E7EB"; StatusFg = "#4B5563";
+                        Status = "不管理"; StatusBg = ThemeManager.Color("StatusIdleBg"); StatusFg = ThemeManager.Color("StatusIdleFg");
                         CanAdd = false; CanRemove = false;
                         break;
                     default:
-                        Status = "文件缺失"; StatusBg = "#FEE2E2"; StatusFg = "#991B1B";
+                        Status = "文件缺失"; StatusBg = ThemeManager.Color("StatusErrorBg"); StatusFg = ThemeManager.Color("StatusErrorFg");
                         CanAdd = false; CanRemove = false;
                         break;
                 }
@@ -79,17 +79,33 @@ namespace PathwinderMgt.Views
             if (version != null) Title = $"Pathwinder 管理器 v{version.Major}.{version.Minor}.{version.Build}";
             LvPrograms.ItemsSource = Rows;
             Loaded += MainWindow_Loaded;
+            ThemeManager.ThemeChanged += OnThemeChanged;
+            Closed += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
+        }
+
+        /// <summary>主题切换后重建行：状态标签与架构列的颜色是构造时取的快照，需重新取色。</summary>
+        private void OnThemeChanged()
+        {
+            if (_cfg != null) RefreshRows();
         }
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            // 运行库缺失会导致注入失败：优先提示，避免用户误以为重定向本身有问题
+            App.CheckVcRuntime();
+
             var startup = App.Bootstrap;
             _cfg = startup.Config;
             _service = startup.Programs;
             RefreshRows();
 
-            // 管理员启动按钮：已提权则置灰，否则可点击重启为管理员
-            BtnRunAsAdmin.IsEnabled = !App.IsElevated();
+            // 权限按钮：显示当前实际权限，点击切换到另一种权限
+            var elevated = App.IsElevated();
+            BtnRunAsAdmin.Content = elevated ? "当前权限：管理员" : "当前权限：普通用户";
+            BtnRunAsAdmin.ToolTip = elevated
+                ? "点击切换为普通用户权限（会重启管理器）"
+                : "点击切换为管理员权限（会重启管理器）";
+            BtnRunAsAdmin.IsEnabled = true;
 
             var c = startup.Cleanup;
             CleanupText.Text = _cfg.Settings.LastCleanupTime is DateTime t
@@ -148,7 +164,10 @@ namespace PathwinderMgt.Views
             }
             // 空列表时 Auto 列宽只剩表头宽，改用固定合理宽度；有数据时恢复自适应（NaN = Auto）
             bool empty = Rows.Count == 0;
-            ColOp.Width = empty ? 230 : double.NaN;
+            // 操作列固定宽度：按钮组合随行状态变化（详情 + 添加/移除），
+            // Auto 列宽在重建行时会按「只剩一个按钮」的瞬时状态量宽，导致另一个按钮被裁掉。
+            // 160 = 详情(48) + 间距(6) + 添加/移除指令(74) + 行内边距(24) + 余量
+            ColOp.Width = 160;
             ColStatus.Width = empty ? 80 : double.NaN;
             ColDisplay.Width = empty ? 150 : double.NaN;
             ColArch.Width = empty ? 70 : double.NaN;
@@ -182,6 +201,12 @@ namespace PathwinderMgt.Views
             }
             else return;
             ApplyActiveSort();
+            // 表头文字多了排序箭头，Auto 列宽不会自动重算，不刷新会把箭头裁掉一半
+            if (LvPrograms.View is GridView gv)
+            {
+                LvPrograms.UpdateLayout();
+                gv.RefreshAutoColumns();
+            }
         }
 
         /// <summary>按当前生效的排序方式重排（默认不排序）。</summary>
@@ -523,7 +548,8 @@ namespace PathwinderMgt.Views
 
         private void BtnRunAsAdmin_Click(object sender, RoutedEventArgs e)
         {
-            App.RestartElevated();
+            if (App.IsElevated()) App.RestartAsStandardUser();
+            else App.RestartElevated();
         }
 
         private void BtnAbout_Click(object sender, RoutedEventArgs e)
@@ -545,11 +571,13 @@ namespace PathwinderMgt.Views
             }
         }
 
-        private void BtnRefresh_Click(object sender, RoutedEventArgs e)
+        private async void BtnRefresh_Click(object sender, RoutedEventArgs e)
         {
+            StartSpin();
             try
             {
-                var result = CleanupManager.Run(_cfg);
+                // 清理/扫描放到后台线程，UI 线程保持响应，图标才能持续旋转
+                var result = await Task.Run(() => CleanupManager.Run(_cfg));
                 ConfigManager.Save(_cfg);
                 RefreshRows();
                 CleanupText.Text = _cfg.Settings.LastCleanupTime is DateTime t
@@ -558,6 +586,36 @@ namespace PathwinderMgt.Views
                 AnimateRowsIn();
             }
             catch (Exception ex) { MessageBox.Show(ex.Message, "刷新失败"); }
+            finally { StopSpin(); } // 列表刷新结束才解除禁用
+        }
+
+        /// <summary>开始刷新：图标持续旋转 + 按钮禁用（刷新期间不可重复点击）。</summary>
+        private void StartSpin()
+        {
+            if (RefreshIcon.RenderTransform is not RotateTransform rt)
+            {
+                rt = new RotateTransform();
+                RefreshIcon.RenderTransform = rt;
+            }
+            BtnRefresh.IsEnabled = false;
+            // 转一整圈约 0.7s 并循环，等刷新真正结束再停
+            var anim = new DoubleAnimation(0, 360, TimeSpan.FromMilliseconds(700))
+            {
+                RepeatBehavior = RepeatBehavior.Forever
+            };
+            rt.BeginAnimation(RotateTransform.AngleProperty, anim);
+        }
+
+        /// <summary>刷新结束：停转、角度复位、恢复可点击。</summary>
+        private void StopSpin()
+        {
+            if (RefreshIcon.RenderTransform is RotateTransform rt)
+            {
+                // 清掉动画时钟再复位角度，避免下一圈从当前角度接着算
+                rt.BeginAnimation(RotateTransform.AngleProperty, null);
+                rt.Angle = 0;
+            }
+            BtnRefresh.IsEnabled = true;
         }
 
         /// <summary>刷新完成后让列表行依次淡入，用列表动画替代左下角的“已刷新”文字提示。</summary>
@@ -591,6 +649,9 @@ namespace PathwinderMgt.Views
             if (gridView == null) return;
             foreach (var col in gridView.Columns)
             {
+                // 只重算 Auto 列；显式设了固定宽度的列（如操作列）必须跳过，
+                // 否则这里会把它重置回 Auto，按钮组合又会被裁掉
+                if (!double.IsNaN(col.Width)) continue;
                 if (col.ActualWidth <= 0) continue;
                 col.Width = col.ActualWidth;
                 col.Width = double.NaN;
