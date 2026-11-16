@@ -1,7 +1,7 @@
 <Window x:Class="PathwinderMgt.Views.RestoreWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="快捷方式恢复" Height="400" Width="560" MinWidth="460" MinHeight="300"
+        Title="{DynamicResource L_Restore_Title}" Height="400" Width="560" MinWidth="460" MinHeight="300"
         Icon="pack://application:,,,/app.ico"
         Background="{DynamicResource WindowBg}"
         WindowStartupLocation="CenterScreen"
@@ -12,7 +12,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="请拖入需要恢复的快捷方式（支持一次拖入多个），恢复结果输出到桌面" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,8"/>
+        <TextBlock Grid.Row="0" Text="{DynamicResource L_Restore_Hint}" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,8"/>
         <TextBox Grid.Row="1" Name="LogBox" IsReadOnly="True"
                  FontFamily="Consolas" FontSize="12"
                  TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"

@@ -15,7 +15,8 @@ namespace PathwinderMgt
     public partial class App : Application
     {
         // 主窗口标题，用于定位已有实例的窗口句柄
-        private const string MainWindowTitle = "Pathwinder 管理器";
+        /// <summary>主窗口标题候选（界面语言可为中文或英文），用于定位已有实例窗口。</summary>
+        private static readonly string[] MainWindowTitles = { "Pathwinder 管理器", "Pathwinder Manager" };
 
         // Win32 API：激活已有窗口到前台
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -53,7 +54,12 @@ namespace PathwinderMgt
         /// </summary>
         private static void ActivateExistingInstance()
         {
-            IntPtr hwnd = FindWindow(null, MainWindowTitle);
+            IntPtr hwnd = IntPtr.Zero;
+            foreach (string title in MainWindowTitles)
+            {
+                hwnd = FindWindow(null, title);
+                if (hwnd != IntPtr.Zero) break;
+            }
             if (hwnd == IntPtr.Zero) return;
 
             // 恢复最小化窗口
@@ -134,14 +140,14 @@ namespace PathwinderMgt
                 catch { }
                 MessageBox.Show("管理器启动失败：" + ex.Message +
                                 "\n\n详细信息已写入 logs\\manager.log。程序将退出。",
-                    "Pathwinder 管理器", MessageBoxButton.OK, MessageBoxImage.Error);
+                    Loc.T("L_App_Name"), MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown(0);
                 return;
             }
 
             if (Bootstrap.PermissionFatal)
             {
-                MessageBox.Show(ErrorMessages.Text(PwCode.NoPermission), "Pathwinder 管理器",
+                MessageBox.Show(ErrorMessages.Text(PwCode.NoPermission), Loc.T("L_App_Name"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 try { _mutex.ReleaseMutex(); } catch { }
                 Shutdown(0);
@@ -151,6 +157,9 @@ namespace PathwinderMgt
             // 应用已保存的主题：必须在主窗口创建前生效（StartupUri 在 OnStartup 之后加载），
             // 否则窗口会先以浅色渲染再跳到深色
             ThemeManager.Apply(Bootstrap?.Config?.Settings?.Theme);
+
+            // 应用已保存的界面语言：同样要在主窗口创建前生效
+            Loc.Apply(Bootstrap?.Config?.Settings?.Language);
 
             // 之后打开的每个窗口（含对话框）加载时同步标题栏，避免深色内容配白色标题栏
             EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent,
@@ -176,14 +185,10 @@ namespace PathwinderMgt
             if (!IsVcRuntimeInstalled("x86")) missing.Add("x86");
             if (missing.Count == 0) return;
 
-            string archText = string.Join(" 和 ", missing);
+            string archText = string.Join(Loc.IsEnglish ? " and " : " 和 ", missing);
             var choice = MessageBox.Show(
-                $"检测到系统缺少 Microsoft Visual C++ 2015-2022 运行库（{archText}）。\n\n" +
-                "缺少运行库时，Pathwinder 无法注入目标程序，路径重定向不会生效。\n\n" +
-                "「是」：打开官方下载地址（安装后请重新启动本管理器）\n" +
-                "「否」：不再提示（可在「设置」中重新开启）\n" +
-                "「取消」：本次跳过，下次启动仍会提示",
-                "缺少系统运行库", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+                Loc.T("L_App_NeedRuntimeMsg", archText),
+                Loc.T("L_App_NeedRuntimeTitle"), MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
 
             if (choice == MessageBoxResult.No)
             {
@@ -263,9 +268,8 @@ namespace PathwinderMgt
                     {
                         // 没有新进程接手，重新持有互斥量，避免出现两个管理器窗口
                         TryReacquireMutex();
-                        MessageBox.Show("系统已关闭 UAC，且没有可用的提权中转进程。\n\n" +
-                                        "请关闭管理器后，从桌面快捷方式重新启动。",
-                            "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Loc.T("L_App_UacOff"),
+                            Loc.T("L_Common_Warning"), MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
                 }
@@ -282,9 +286,8 @@ namespace PathwinderMgt
             {
                 // 提权被取消或启动失败：当前实例仍在运行，需重新持有互斥量
                 TryReacquireMutex();
-                MessageBox.Show("无法以管理员身份重启：" + ex.Message +
-                                "\n\n请关闭管理器后，右键选择「以管理员身份运行」手动重试。",
-                    "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("L_App_ElevateFailed", ex.Message),
+                    Loc.T("L_Common_Warning"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -371,9 +374,8 @@ namespace PathwinderMgt
             catch (Exception ex)
             {
                 TryReacquireMutex();
-                MessageBox.Show("无法以普通权限重启：" + ex.Message +
-                                "\n\n请关闭管理器后，从桌面快捷方式重新启动（不要从管理员终端启动）。",
-                    "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("L_App_StandardFailed", ex.Message),
+                    Loc.T("L_Common_Warning"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -560,9 +562,8 @@ namespace PathwinderMgt
         public static bool AskRestartElevated()
         {
             var choice = MessageBox.Show(
-                "目标程序位于受保护目录（如 Program Files），当前权限无法写入 Hookshot 授权文件。\n\n" +
-                "是否立即以管理员身份重启管理器？\n（重启后请重新执行该操作）",
-                "需要管理员权限", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                Loc.T("L_App_NeedAdminMsg"),
+                Loc.T("L_App_NeedAdminTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (choice != MessageBoxResult.Yes) return false;
             RestartElevated();
             return true;
@@ -577,8 +578,8 @@ namespace PathwinderMgt
             }
             catch { /* 日志失败不再弹窗递归 */ }
 
-            MessageBox.Show("发生未预期的错误，操作已中止（程序不会退出）：\n\n" + e.Exception.Message,
-                "Pathwinder 管理器", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Loc.T("L_App_Unexpected", e.Exception.Message),
+                Loc.T("L_App_Name"), MessageBoxButton.OK, MessageBoxImage.Error);
             e.Handled = true;
         }
 

@@ -94,6 +94,9 @@ namespace PathwinderMgt.Models
 
         /// <summary>界面主题：Light（浅色，默认）/ Dark（深色）。</summary>
         public string Theme { get; set; } = "Light";
+
+        /// <summary>界面语言：zh-CN（简体中文，默认）/ en-US（English）。</summary>
+        public string Language { get; set; } = "zh-CN";
     }
 
     /// <summary>config.json 根对象（文档第 6 节）。路径不写入配置，运行时按 exe 目录推导。</summary>

@@ -12,7 +12,7 @@ namespace PathwinderMgt.Views
     public class RuleVM
     {
         public Rule Source { get; }
-        public string Name => Source.BuiltIn ? Source.Name + "（内置）" : Source.Name;
+        public string Name => Source.BuiltIn ? Source.Name + Loc.T("L_Rules_BuiltInSuffix") : Source.Name;
         public string OriginDirectory => Source.OriginDirectory;
         public string TargetDirectory => Source.TargetDirectory;
 
@@ -46,6 +46,20 @@ namespace PathwinderMgt.Views
             LvRules.ItemsSource = Rows;
             foreach (var r in _rules) Rows.Add(new RuleVM(r));
             if (Rows.Count > 0) LvRules.SelectedIndex = 0;
+
+            // 语言切换后规则名里的「内置」等后缀需重新生成（RuleVM 未实现属性通知）
+            Loc.LanguageChanged += OnLanguageChanged;
+            Unloaded += (_, _) => Loc.LanguageChanged -= OnLanguageChanged;
+        }
+
+        private void OnLanguageChanged()
+        {
+            var selected = _current;
+            var items = Rows.ToList();
+            Rows.Clear();
+            foreach (var vm in items) Rows.Add(vm);
+            if (selected != null) LvRules.SelectedItem = selected;
+            RefreshRulesColumns();
         }
 
         private void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
@@ -94,53 +108,56 @@ namespace PathwinderMgt.Views
 
         private void BtnAdd_Click(object sender, RoutedEventArgs e)
         {
-            int n = _rules.Count + 1;
-            string name = "新规则" + n;
-            while (_rules.Any(r => r.Name == name)) name = "新规则" + (++n);
+            // 新建只是草稿：不加入 _rules、不触发 Changed，因此不会落盘，也不会同步到工作区 ini。
+            // 点「保存」才正式写入；未保存就关闭窗口时草稿随面板一起丢弃。
+            int n = Rows.Count + 1;
+            string name = Loc.T("L_Rules_NewRule") + n;
+            while (Rows.Any(v => v.Source.Name == name)) name = Loc.T("L_Rules_NewRule") + (++n);
 
             var r = new Rule { Name = name };
             // 自定义状态下新规则物化为程序级当前值；非自定义保持 null（跟随程序级）
             if (_customEnabled) r.RedirectMode = _getProgramMode();
-            _rules.Add(r);
             var vm = new RuleVM(r);
             Rows.Add(vm);
             LvRules.SelectedItem = vm;
             TxtName.Focus();
             RefreshRulesColumns();
-            RaiseChanged();
         }
 
         private void BtnDel_Click(object sender, RoutedEventArgs e)
         {
             if (_current == null)
             {
-                MessageBox.Show("请先在列表中选中一条规则。", "删除选中",
+                MessageBox.Show(Loc.T("L_Rules_PickFirst"), Loc.T("L_Rules_Delete"),
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
             if (_current.Source.BuiltIn)
             {
-                MessageBox.Show("该规则是内置规则，可编辑但不可删除。", "删除选中",
+                MessageBox.Show(Loc.T("L_Rules_BuiltInNoDelete"), Loc.T("L_Rules_Delete"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             int idx = Rows.IndexOf(_current);
-            _rules.Remove(_current.Source);
+            // 草稿（新建后未保存）不在 _rules 中：只从列表移除，无需落盘/同步 ini
+            bool isDraft = !_rules.Contains(_current.Source);
+            if (!isDraft) _rules.Remove(_current.Source);
             Rows.Remove(_current);
             if (Rows.Count > 0) LvRules.SelectedIndex = Math.Min(idx, Rows.Count - 1);
             else _current = null;
             RefreshRulesColumns();
-            RaiseChanged();
+            if (!isDraft) RaiseChanged();
         }
 
         private void BtnSave_Click(object sender, RoutedEventArgs e)
         {
             // 列表为空（未选中任何规则）时：把当前填写内容作为新规则保存，避免“点了没反应”
-            bool isNew = _current == null;
+            // 「新建规则」产生的草稿不在 _rules 中，保存同样走新增分支
+            bool isNew = _current == null || !_rules.Contains(_current.Source);
             if (isNew && TxtName.Text.Trim().Length == 0 &&
                 TxtOrigin.Text.Trim().Length == 0 && TxtTarget.Text.Trim().Length == 0)
             {
-                MessageBox.Show("请先在上方列表选中一条规则；或填写规则内容后点“保存”新建。", "保存",
+                MessageBox.Show(Loc.T("L_Rules_SaveEmpty"), Loc.T("L_Rules_Save"),
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -158,7 +175,7 @@ namespace PathwinderMgt.Views
             string err = RuleValidator.Validate(draft);
             if (err != null)
             {
-                MessageBox.Show(err, "规则校验", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(err, Loc.T("L_Rules_Validate"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -175,7 +192,12 @@ namespace PathwinderMgt.Views
                 if (_customEnabled) draft.RedirectMode = _getProgramMode();
                 _rules.Add(draft);
                 var vm = new RuleVM(draft);
-                Rows.Add(vm);
+                if (_current != null)
+                {
+                    // 草稿已显示在列表中：原位替换为正式规则，避免多出一行
+                    Rows[Rows.IndexOf(_current)] = vm;
+                }
+                else Rows.Add(vm);
                 _current = vm;
                 LvRules.SelectedItem = vm;
             }
@@ -197,7 +219,7 @@ namespace PathwinderMgt.Views
             }
 
             if (err != null)
-                MessageBox.Show(err, "规则校验", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(err, Loc.T("L_Rules_Validate"), MessageBoxButton.OK, MessageBoxImage.Warning);
             // 保存后强制规则列表按新内容重新测量列宽（Auto 列宽不会随 ObservableCollection 变化自动重算）
             RefreshRulesColumns();
             RaiseChanged();
@@ -208,7 +230,7 @@ namespace PathwinderMgt.Views
         {
             if (LvRules.View is not GridView gv) return;
             LvRules.UpdateLayout();
-            gv.RefreshAutoColumns();
+            gv.RefreshAutoColumns(LvRules);
         }
     }
 }

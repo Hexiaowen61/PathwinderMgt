@@ -19,9 +19,10 @@ namespace PathwinderMgt.Views
     {
         internal enum RowState { Managed, Unmanaged, Missing, PermissionDenied, Excluded }
 
-        public class RowVM
+        public class RowVM : System.ComponentModel.INotifyPropertyChanged
         {
-            public ProgramEntry P { get; init; }
+            public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+            public ProgramEntry P { get; internal set; }
             internal RowState State { get; private set; }
             public string Status { get; private set; }
             public string StatusBg { get; private set; }
@@ -35,32 +36,47 @@ namespace PathwinderMgt.Views
             public string ArchitectureFg =>
                 ThemeManager.Color(P.Architecture == PeDetector.Arm64 ? "Danger" : "TextBody");
 
+            /// <summary>详情窗口保存后会替换成新的 ProgramEntry 实例，就地换绑定，避免重建整表。</summary>
+            internal void SetProgram(ProgramEntry p)
+            {
+                P = p;
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(DisplayName)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(OriginalTarget)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(Architecture)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(ArchitectureFg)));
+            }
+
             internal void SetState(RowState state)
             {
                 State = state;
                 switch (state)
                 {
                     case RowState.Managed:
-                        Status = "已受管"; StatusBg = ThemeManager.Color("StatusOkBg"); StatusFg = ThemeManager.Color("StatusOkFg");
+                        Status = Loc.T("L_Status_Managed"); StatusBg = ThemeManager.Color("StatusOkBg"); StatusFg = ThemeManager.Color("StatusOkFg");
                         CanAdd = false; CanRemove = true;
                         break;
                     case RowState.Unmanaged:
-                        Status = "未受管"; StatusBg = ThemeManager.Color("StatusWarnBg"); StatusFg = ThemeManager.Color("StatusWarnFg");
+                        Status = Loc.T("L_Status_NotManaged"); StatusBg = ThemeManager.Color("StatusWarnBg"); StatusFg = ThemeManager.Color("StatusWarnFg");
                         CanAdd = true; CanRemove = false;
                         break;
                     case RowState.PermissionDenied:
-                        Status = "无权限"; StatusBg = ThemeManager.Color("StatusErrorBg"); StatusFg = ThemeManager.Color("StatusErrorFg");
+                        Status = Loc.T("L_Status_NoPermission"); StatusBg = ThemeManager.Color("StatusErrorBg"); StatusFg = ThemeManager.Color("StatusErrorFg");
                         CanAdd = false; CanRemove = false;
                         break;
                     case RowState.Excluded:
-                        Status = "不管理"; StatusBg = ThemeManager.Color("StatusIdleBg"); StatusFg = ThemeManager.Color("StatusIdleFg");
+                        Status = Loc.T("L_Status_Excluded"); StatusBg = ThemeManager.Color("StatusIdleBg"); StatusFg = ThemeManager.Color("StatusIdleFg");
                         CanAdd = false; CanRemove = false;
                         break;
                     default:
-                        Status = "文件缺失"; StatusBg = ThemeManager.Color("StatusErrorBg"); StatusFg = ThemeManager.Color("StatusErrorFg");
+                        Status = Loc.T("L_Status_Missing"); StatusBg = ThemeManager.Color("StatusErrorBg"); StatusFg = ThemeManager.Color("StatusErrorFg");
                         CanAdd = false; CanRemove = false;
                         break;
                 }
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(Status)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(StatusBg)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(StatusFg)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(CanAdd)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(CanRemove)));
             }
         }
 
@@ -68,25 +84,66 @@ namespace PathwinderMgt.Views
         private ProgramService _service;
         public ObservableCollection<RowVM> Rows { get; } = new();
         private bool _warningsShown;
+        private DateTime? _cleanupTime;   // 上次清理时间与统计，供语言切换时重绘状态栏文案
+        private int _cleanupRebuilt;
+        private int _cleanupOrphans;
         private bool? _nameSortAsc; // 显示名排序方向：null=未排序，true=升序，false=降序
         private bool? _statusSortAsc; // 状态排序方向：null=未排序，true=升序，false=降序
+        private readonly TextBlock _statusHeaderBlock = new();
+        private readonly TextBlock _displayHeaderBlock = new();
 
         public MainWindow()
         {
             InitializeComponent();
-            // 版本号来自 csproj 的 <Version>（编译进程序集版本），与「说明」窗口显示的一致
-            var version = typeof(MainWindow).Assembly.GetName().Version;
-            if (version != null) Title = $"Pathwinder 管理器 v{version.Major}.{version.Minor}.{version.Build}";
+            ColStatus.Header = _statusHeaderBlock;
+            ColDisplay.Header = _displayHeaderBlock;
+            UseWidestHeaderPlaceholder(); // 首次测宽按最宽符号，箭头才不会被裁
+            UpdateTitle();
             LvPrograms.ItemsSource = Rows;
             Loaded += MainWindow_Loaded;
             ThemeManager.ThemeChanged += OnThemeChanged;
-            Closed += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
+            Loc.LanguageChanged += OnLanguageChanged;
+            Closed += (_, _) =>
+            {
+                ThemeManager.ThemeChanged -= OnThemeChanged;
+                Loc.LanguageChanged -= OnLanguageChanged;
+            };
         }
 
         /// <summary>主题切换后重建行：状态标签与架构列的颜色是构造时取的快照，需重新取色。</summary>
         private void OnThemeChanged()
         {
             if (_cfg != null) RefreshRows();
+        }
+
+        /// <summary>语言切换后：重设代码里直接赋值的文案，并按新语言表头重测列宽。</summary>
+        private void OnLanguageChanged()
+        {
+            UpdateTitle();
+            ApplyPermissionButton();
+            UpdateCleanupText();
+            if (_cfg == null) return;
+            RefreshRows();                // 状态标签等绑定文案随语言重新生成
+            UseWidestHeaderPlaceholder(); // 再按最宽符号占位后测宽，箭头不会被裁
+            RecalculateAutoColumns();
+            UpdateHeaderArrows();
+        }
+
+        /// <summary>窗口标题：应用名 + 版本号（版本来自 csproj 的 &lt;Version&gt;，与「说明」窗口一致）。</summary>
+        private void UpdateTitle()
+        {
+            var version = typeof(MainWindow).Assembly.GetName().Version;
+            Title = version == null
+                ? Loc.T("L_Main_Title")
+                : $"{Loc.T("L_Main_Title")} v{version.Major}.{version.Minor}.{version.Build}";
+        }
+
+        /// <summary>权限按钮文案：显示当前实际权限。</summary>
+        private void ApplyPermissionButton()
+        {
+            bool elevated = App.IsElevated();
+            BtnRunAsAdmin.Content = Loc.T(elevated ? "L_Main_AdminElevated" : "L_Main_AdminNormal");
+            BtnRunAsAdmin.ToolTip = Loc.T(elevated ? "L_Main_AdminTipToNormal" : "L_Main_AdminTipToAdmin");
         }
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -100,85 +157,118 @@ namespace PathwinderMgt.Views
             RefreshRows();
 
             // 权限按钮：显示当前实际权限，点击切换到另一种权限
-            var elevated = App.IsElevated();
-            BtnRunAsAdmin.Content = elevated ? "当前权限：管理员" : "当前权限：普通用户";
-            BtnRunAsAdmin.ToolTip = elevated
-                ? "点击切换为普通用户权限（会重启管理器）"
-                : "点击切换为管理员权限（会重启管理器）";
+            ApplyPermissionButton();
             BtnRunAsAdmin.IsEnabled = true;
 
             var c = startup.Cleanup;
-            CleanupText.Text = _cfg.Settings.LastCleanupTime is DateTime t
-                ? $"上次清理：{t:yyyy-MM-dd HH:mm:ss}（重建 {c.WorkspacesRebuilt}，删除孤儿 {c.OrphanDirsRemoved}）"
-                : "尚未执行清理";
+            _cleanupTime = _cfg.Settings.LastCleanupTime;
+            _cleanupRebuilt = c.WorkspacesRebuilt;
+            _cleanupOrphans = c.OrphanDirsRemoved;
+            UpdateCleanupText();
 
             var notices = new List<string>(startup.Warnings);
             if (startup.ChildAuthAdded > 0)
-                notices.Add($"检测到 {startup.ChildAuthAdded} 个子进程缺少 Hookshot 授权，已自动补建授权文件。" +
-                            "请完全退出目标程序后，重新通过受管快捷方式启动，重定向才能覆盖全部子进程。");
+                notices.Add(Loc.T("L_Main_ChildAuthAdded", startup.ChildAuthAdded));
             if (startup.ChildAuthFailed > 0)
-                notices.Add($"有 {startup.ChildAuthFailed} 个子进程位于受保护目录，授权文件未能自动创建，详见 logs\\manager.log。");
+                notices.Add(Loc.T("L_Main_ChildAuthFailed", startup.ChildAuthFailed));
 
             if (!_warningsShown && notices.Count > 0)
             {
                 _warningsShown = true;
                 MessageBox.Show(string.Join(Environment.NewLine + Environment.NewLine, notices),
-                    "启动提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    Loc.T("L_Main_StartupTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+        }
+
+        /// <summary>状态栏右侧清理统计文案（语言切换时也走这里重绘）。</summary>
+        private void UpdateCleanupText()
+        {
+            CleanupText.Text = _cleanupTime is DateTime t
+                ? Loc.T("L_Main_LastCleanupFull", t.ToString("yyyy-MM-dd HH:mm:ss"), _cleanupRebuilt, _cleanupOrphans)
+                : Loc.T("L_Main_NeverCleanup");
         }
 
         /// <summary>逐个校验快捷方式实际状态，以实际为准刷新 UI（文档 5.1.5）。</summary>
         private void RefreshRows()
         {
+            // 程序集合没变化时就地更新每行，不重建集合——
+            // 重建会让虚拟化列表跳回顶部，滚动位置丢失。
+            // 注意：详情窗口保存时会替换成新的 ProgramEntry 实例，所以这里用 Id 比对而不是引用比对。
+            bool sameShape = Rows.Count == _cfg.Programs.Count &&
+                             Rows.Select(r => r.P.Id).OrderBy(x => x, StringComparer.Ordinal)
+                                 .SequenceEqual(_cfg.Programs.Select(p => p.Id).OrderBy(x => x, StringComparer.Ordinal));
+            if (sameShape)
+            {
+                foreach (var row in Rows)
+                {
+                    var p = _cfg.Programs.FirstOrDefault(x => x.Id == row.P.Id);
+                    if (p == null) continue;
+                    row.SetProgram(p); // 实例可能已被详情窗口替换，同时刷新主题相关颜色
+                    row.SetState(ComputeState(p));
+                }
+                UpdateStatusText();
+                UseWidestHeaderPlaceholder();
+                LvPrograms.UpdateLayout(); // 空表/行数不变时也按最宽符号测一次列宽
+                UpdateHeaderArrows();      // 再显示实际的 ●/▲/▼
+                return;
+            }
+
             Rows.Clear();
             foreach (var p in _cfg.Programs)
             {
                 var row = new RowVM { P = p };
-                RowState state;
-                // 标记为"不管理"的程序：状态固定展示，不再校验快捷方式/权限
-                if (p.Excluded)
-                    state = RowState.Excluded;
-                else if (!ProgramService.IsShortcutAvailable(p))
-                    state = RowState.Missing;
-                else if (File.Exists(p.OriginalShortcut) &&
-                         ShortcutManager.IsManaged(p.OriginalShortcut, AppPaths.RuntimeRoot, out var hash) &&
-                         string.Equals(hash, p.Id, StringComparison.OrdinalIgnoreCase))
-                    state = RowState.Managed;
-                else
-                    state = RowState.Unmanaged;
-
-                // 目标 exe 目录不可写（如 Program Files）或快捷方式所在位置不可写（如公共桌面/只读）
-                // → 无权限，禁止添加/移除指令
-                if (state != RowState.Missing && state != RowState.Excluded &&
-                    (!_service.IsTargetWritable(p) || !_service.IsShortcutWritable(p)))
-                    state = RowState.PermissionDenied;
-
-                row.SetState(state);
+                row.SetState(ComputeState(p));
                 Rows.Add(row);
             }
-            if (_cfg != null)
-            {
-                int excludedCount = Rows.Count(r => r.Status == "不管理");
-                StatusText.Text = $"共 {_cfg.Programs.Count} 个程序，其中已受管 {Rows.Count(r => r.Status == "已受管")} 个" +
-                                  (excludedCount > 0 ? $"，不管理 {excludedCount} 个" : "");
-            }
-            // 空列表时 Auto 列宽只剩表头宽，改用固定合理宽度；有数据时恢复自适应（NaN = Auto）
-            bool empty = Rows.Count == 0;
-            // 操作列固定宽度：按钮组合随行状态变化（详情 + 添加/移除），
-            // Auto 列宽在重建行时会按「只剩一个按钮」的瞬时状态量宽，导致另一个按钮被裁掉。
-            // 160 = 详情(48) + 间距(6) + 添加/移除指令(74) + 行内边距(24) + 余量
-            ColOp.Width = 160;
-            ColStatus.Width = empty ? 80 : double.NaN;
-            ColDisplay.Width = empty ? 150 : double.NaN;
-            ColArch.Width = empty ? 70 : double.NaN;
-            ColPath.Width = empty ? 300 : double.NaN;
-            // 非空时强制 GridView 按新内容重新测量列宽（Auto 列宽不会随 ObservableCollection 变化自动重算）
-            if (!empty && LvPrograms.View is GridView gv)
-            {
-                LvPrograms.UpdateLayout();
-                gv.RefreshAutoColumns();
-            }
-            ApplyActiveSort(); // 保持当前排序状态（RefreshRows 重建行后重新应用）
+            UpdateStatusText();
+            // 测宽前先把表头换成最宽的符号 ▲，否则按较窄的 ● 测出来的列宽会裁掉箭头。
+            UseWidestHeaderPlaceholder();
+            RecalculateAutoColumns();
+            ApplyActiveSort(); // 列宽测完后再恢复 ●/▲/▼ 与行顺序
+        }
+
+        /// <summary>
+        /// 强制 GridView 丢掉 Auto 列宽缓存并按当前内容重新测量。
+        /// 不能只把 Width 赋成 NaN——列宽本来就是 Auto(NaN) 时这次赋值不产生变化，
+        /// WPF 认为属性没变，不会重算，于是新增/删除行后列宽仍是上一次的旧值。
+        /// 先撑到极大宽度再回 Auto 可以可靠触发重测；
+        /// 也不能反过来用 0 撑——那会让内容在 0 宽下被测量出裁剪后的错误宽度。
+        /// </summary>
+        private void RecalculateAutoColumns()
+        {
+            var cols = new[] { ColOp, ColStatus, ColDisplay, ColArch, ColPath };
+            foreach (var col in cols) col.Width = 9999;
+            LvPrograms.UpdateLayout();
+            foreach (var col in cols) col.Width = double.NaN;
+            LvPrograms.UpdateLayout();
+        }
+
+        /// <summary>计算单行状态：不管理 → 文件缺失 → 已受管/未受管 → 无权限。</summary>
+        private RowState ComputeState(ProgramEntry p)
+        {
+            // 标记为"不管理"的程序：状态固定展示，不再校验快捷方式/权限
+            if (p.Excluded) return RowState.Excluded;
+            if (!ProgramService.IsShortcutAvailable(p)) return RowState.Missing;
+
+            bool managed = File.Exists(p.OriginalShortcut) &&
+                           ShortcutManager.IsManaged(p.OriginalShortcut, AppPaths.RuntimeRoot, out var hash) &&
+                           string.Equals(hash, p.Id, StringComparison.OrdinalIgnoreCase);
+            var state = managed ? RowState.Managed : RowState.Unmanaged;
+
+            // 目标 exe 目录不可写（如 Program Files）或快捷方式所在位置不可写（如公共桌面/只读）
+            // → 无权限，禁止添加/移除指令
+            if (!_service.IsTargetWritable(p) || !_service.IsShortcutWritable(p))
+                state = RowState.PermissionDenied;
+            return state;
+        }
+
+        /// <summary>底部统计文案。</summary>
+        private void UpdateStatusText()
+        {
+            int excludedCount = Rows.Count(r => r.State == RowState.Excluded);
+            int managedCount = Rows.Count(r => r.State == RowState.Managed);
+            StatusText.Text = Loc.T("L_Main_StatusSummary", _cfg.Programs.Count, managedCount) +
+                              (excludedCount > 0 ? Loc.T("L_Main_StatusExcluded", excludedCount) : "");
         }
 
         // ---------------- 排序 ----------------
@@ -187,40 +277,62 @@ namespace PathwinderMgt.Views
         private void ColHeader_Click(object sender, RoutedEventArgs e)
         {
             if (e.OriginalSource is not GridViewColumnHeader hdr) return;
+
             if (ReferenceEquals(hdr.Column, ColDisplay))
             {
                 _statusSortAsc = null;
-                ColStatus.Header = "状态";
-                _nameSortAsc = _nameSortAsc != true; // 未排序/降序 → 升序；升序 → 降序
+                _nameSortAsc = _nameSortAsc != true;
             }
             else if (ReferenceEquals(hdr.Column, ColStatus))
             {
                 _nameSortAsc = null;
-                ColDisplay.Header = "显示名";
                 _statusSortAsc = _statusSortAsc != true;
             }
             else return;
-            ApplyActiveSort();
-            // 表头文字多了排序箭头，Auto 列宽不会自动重算，不刷新会把箭头裁掉一半
-            if (LvPrograms.View is GridView gv)
-            {
-                LvPrograms.UpdateLayout();
-                gv.RefreshAutoColumns();
-            }
+
+            ApplySortOrder();   // 只重排行顺序
+            UpdateHeaderArrows(); // 只换符号，字符宽度不变 → 列宽无需重测
         }
 
         /// <summary>按当前生效的排序方式重排（默认不排序）。</summary>
         private void ApplyActiveSort()
         {
+            ApplySortOrder();
+            UpdateHeaderArrows();
+        }
+
+        /// <summary>只重排行顺序，不动表头文字。</summary>
+        private void ApplySortOrder()
+        {
             if (_statusSortAsc != null) ApplyStatusSort();
             else ApplyNameSort();
         }
 
-        /// <summary>按显示名重排当前行集合并更新表头箭头。</summary>
+        /// <summary>
+        /// 刷新两列表头文字。始终保留一个符号位（● / ▲ / ▼）——
+        /// 这样切换排序时表头宽度一致，Auto 列宽不会因文字变宽而重新分配。
+        /// 注意 ● 比 ▲/▼ 窄 5px，所以测量列宽时必须用最宽的符号（见 UseWidestHeaderPlaceholder）。
+        /// </summary>
+        private void UpdateHeaderArrows()
+        {
+            _displayHeaderBlock.Text = Loc.T("L_Main_ColDisplay") + " " + (_nameSortAsc == null ? "●" : _nameSortAsc == true ? "▲" : "▼");
+            _statusHeaderBlock.Text = Loc.T("L_Main_ColStatus") + " " + (_statusSortAsc == null ? "●" : _statusSortAsc == true ? "▲" : "▼");
+        }
+
+        /// <summary>
+        /// 测量列宽前把表头都设成最宽的符号 ▲。
+        /// WPF 的 Auto 列宽只在下一次布局时算一次并缓存，若按较窄的 ● 测量，
+        /// 之后切到 ▲/▼ 就会比列宽多出约 5px，箭头被裁掉一截。
+        /// </summary>
+        private void UseWidestHeaderPlaceholder()
+        {
+            _displayHeaderBlock.Text = Loc.T("L_Main_ColDisplay") + " ▲";
+            _statusHeaderBlock.Text = Loc.T("L_Main_ColStatus") + " ▲";
+        }
+
+        /// <summary>按显示名重排当前行集合。</summary>
         private void ApplyNameSort()
         {
-            ColDisplay.Header = _nameSortAsc == null ? "显示名"
-                : _nameSortAsc == true ? "显示名 ▲" : "显示名 ▼";
             if (_nameSortAsc == null || Rows.Count < 2) return;
             var sorted = _nameSortAsc == true
                 ? Rows.OrderBy(r => r.DisplayName, StringComparer.CurrentCulture).ToList()
@@ -231,8 +343,6 @@ namespace PathwinderMgt.Views
         /// <summary>按状态重排：升序为 已受管→未受管→无权限→文件缺失→不管理，同状态按显示名。</summary>
         private void ApplyStatusSort()
         {
-            ColStatus.Header = _statusSortAsc == null ? "状态"
-                : _statusSortAsc == true ? "状态 ▲" : "状态 ▼";
             if (_statusSortAsc == null || Rows.Count < 2) return;
             var sorted = _statusSortAsc == true
                 ? Rows.OrderBy(r => StatusRank(r.State)).ThenBy(r => r.DisplayName, StringComparer.CurrentCulture).ToList()
@@ -277,8 +387,8 @@ namespace PathwinderMgt.Views
         {
             var dlg = new Microsoft.Win32.OpenFileDialog
             {
-                Title = "选择一个或多个快捷方式（.lnk）或可执行文件（.exe）",
-                Filter = "快捷方式和可执行文件 (*.lnk;*.exe)|*.lnk;*.exe|快捷方式 (*.lnk)|*.lnk|可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
+                Title = Loc.T("L_Main_ImportDlgTitle"),
+                Filter = Loc.T("L_Main_ImportDlgFilter"),
                 Multiselect = true,
                 CheckFileExists = true
             };
@@ -302,7 +412,7 @@ namespace PathwinderMgt.Views
                     var entry = isLnk ? _service.RegisterShortcut(f) : _service.RegisterExe(f);
                     added++;
                     if (entry.Architecture == PeDetector.Arm64)
-                        errors.Add($"「{entry.DisplayName}」检测为 ARM64，Hookshot 无 ARM64 版本，请在详情中手动选择 x86/x64");
+                        errors.Add(Loc.T("L_Main_Arm64Warn", entry.DisplayName));
                 }
                 catch (PwException ex) { errors.Add($"{Path.GetFileName(f)}：{ex.UserMessage}"); }
                 catch (Exception ex) { errors.Add($"{Path.GetFileName(f)}：{ex.Message}"); }
@@ -314,7 +424,7 @@ namespace PathwinderMgt.Views
                 RefreshRows();
             }
             if (errors.Count > 0)
-                MessageBox.Show(string.Join(Environment.NewLine, errors), "添加结果",
+                MessageBox.Show(string.Join(Environment.NewLine, errors), Loc.T("L_Main_AddResultTitle"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
@@ -351,15 +461,15 @@ namespace PathwinderMgt.Views
             catch (PwException ex)
             {
                 if (ex.Code == PwCode.NoPermission && App.AskRestartElevated()) return false;
-                MessageBox.Show(ex.UserMessage, "操作失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(ex.UserMessage, Loc.T("L_Main_OpFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
             catch (Exception ex)
             {
                 // 非预期异常绝不允许闪退：记录后友好提示
                 _service?.Log.Error("单个操作未处理异常：" + ex);
-                MessageBox.Show($"操作失败：{ex.Message}\n\n详细信息已写入 logs\\manager.log。",
-                    "操作失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("L_Main_OpFailedDetail", ex.Message),
+                    Loc.T("L_Main_OpFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
         }
@@ -378,34 +488,34 @@ namespace PathwinderMgt.Views
             });
             if (!anyEmpty) return true;
             return MessageBox.Show(
-                "部分程序没有可用的生效规则（或规则路径为空），添加后启动时不会产生重定向。\n\n是否仍要继续？",
-                "规则未配置", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+                Loc.T("L_Main_RulesEmptyMsg"),
+                Loc.T("L_Main_RulesEmptyTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
         }
 
         private void BtnAddAll_Click(object sender, RoutedEventArgs e)
         {
             var targets = Rows.Where(r => r.CanAdd).ToList();
-            if (targets.Count == 0) { MessageBox.Show("没有需要添加指令的程序。"); return; }
+            if (targets.Count == 0) { MessageBox.Show(Loc.T("L_Main_NoAddTargets")); return; }
             if (ConfirmEmptyRules(targets) != true) return;
 
             var errors = RunBatch(targets, p => _service.ApplyInstruction(p, allowEmptyRules: true), out bool denied);
             ConfigManager.Save(_cfg);
             RefreshRows();
-            ReportBatch("全部添加", targets.Count, errors);
+            ReportBatch(Loc.T("L_Main_OpAddAll"), targets.Count, errors);
             if (denied) App.AskRestartElevated();
         }
 
         private void BtnRemoveAll_Click(object sender, RoutedEventArgs e)
         {
             var targets = Rows.Where(r => r.CanRemove).ToList();
-            if (targets.Count == 0) { MessageBox.Show("没有需要移除指令的程序。"); return; }
-            if (MessageBox.Show($"确认移除 {targets.Count} 个程序的指令？原快捷方式将从备份恢复。",
-                    "确认", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+            if (targets.Count == 0) { MessageBox.Show(Loc.T("L_Main_NoRemoveTargets")); return; }
+            if (MessageBox.Show(Loc.T("L_Main_ConfirmRemoveAll", targets.Count),
+                    Loc.T("L_Main_Confirm"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
 
             var errors = RunBatch(targets, p => _service.RemoveInstruction(p), out _);
             ConfigManager.Save(_cfg);
             RefreshRows();
-            ReportBatch("全部移除", targets.Count, errors);
+            ReportBatch(Loc.T("L_Main_OpRemoveAll"), targets.Count, errors);
         }
 
         private List<string> RunBatch(List<RowVM> targets, Action<ProgramEntry> action,
@@ -432,11 +542,11 @@ namespace PathwinderMgt.Views
 
         private void ReportBatch(string op, int total, List<string> errors)
         {
-            StatusText.Text = $"{op}完成：成功 {total - errors.Count}/{total}";
+            StatusText.Text = Loc.T("L_Main_BatchDone", op, total - errors.Count, total);
             if (errors.Count > 0)
-                MessageBox.Show($"成功 {total - errors.Count} 个，失败 {errors.Count} 个：\n\n" +
-                                string.Join(Environment.NewLine, errors),
-                    $"{op}结果", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("L_Main_BatchPartial", total - errors.Count, errors.Count,
+                                    string.Join(Environment.NewLine, errors)),
+                    Loc.T("L_Main_BatchResultTitle", op), MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         // ---------------- 全部删除记录 ----------------
@@ -450,18 +560,17 @@ namespace PathwinderMgt.Views
             {
                 MessageBox.Show(
                     _cfg.Programs.Count > 0
-                        ? "所有程序均已标记为“不管理”，没有可删除的记录。"
-                        : "当前没有任何记录可删除。",
-                    "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        ? Loc.T("L_Main_DeleteAllNoneExcluded")
+                        : Loc.T("L_Main_DeleteAllNone"),
+                    Loc.T("L_Common_Warning"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
             int skipped = _cfg.Programs.Count - count;
 
             var result = MessageBox.Show(
-                $"确定要删除所有 {count} 条记录吗？此操作不可撤销。\n\n" +
-                "受管程序的快捷方式将从备份恢复，工作区与备份文件将被清理。" +
-                (skipped > 0 ? $"\n\n已标记为“不管理”的 {skipped} 个程序将被跳过。" : ""),
-                "确认删除全部记录", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+                Loc.T("L_Main_DeleteAllConfirm", count) +
+                (skipped > 0 ? Loc.T("L_Main_DeleteAllSkipped", skipped) : ""),
+                Loc.T("L_Main_DeleteAllTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
             if (result != MessageBoxResult.Yes) return;
 
             var btn = sender as Button;
@@ -472,10 +581,10 @@ namespace PathwinderMgt.Views
                 if (btn != null)
                 {
                     btn.IsEnabled = false;
-                    btn.Content = "删除中...";
+                    btn.Content = Loc.T("L_Main_Deleting");
                 }
                 Cursor = Cursors.Wait;
-                StatusText.Text = "正在删除全部记录...";
+                StatusText.Text = Loc.T("L_Main_DeletingAllStatus");
                 await Task.Delay(50); // 让 UI 渲染加载状态
 
                 var errors = new List<string>();
@@ -499,17 +608,17 @@ namespace PathwinderMgt.Views
 
                 if (errors.Count == 0)
                 {
-                    StatusText.Text = $"已删除全部 {count} 条记录";
-                    MessageBox.Show($"已成功删除全部 {count} 条记录。", "删除完成",
+                    StatusText.Text = Loc.T("L_Main_DeleteDoneStatus", count);
+                    MessageBox.Show(Loc.T("L_Main_DeleteDoneMsg", count), Loc.T("L_Main_DeleteCompleteTitle"),
                         MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else
                 {
                     int ok = count - errors.Count;
-                    StatusText.Text = $"删除完成：成功 {ok}/{count}";
-                    MessageBox.Show($"成功删除 {ok} 条，失败 {errors.Count} 条：\n\n" +
-                                    string.Join(Environment.NewLine, errors),
-                        "删除结果", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    StatusText.Text = Loc.T("L_Main_DeletePartialStatus", ok, count);
+                    MessageBox.Show(Loc.T("L_Main_DeletePartialMsg", ok, errors.Count,
+                                        string.Join(Environment.NewLine, errors)),
+                        Loc.T("L_Main_DeleteResultTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
             finally
@@ -541,7 +650,23 @@ namespace PathwinderMgt.Views
             var dlg = new ProgramWindow(_cfg, p, _service) { Owner = this };
             dlg.ShowDialog();
             ConfigManager.Save(_cfg);
-            RefreshRows();
+            // 只刷新受影响的那一行。详情窗口保存时会用拷贝替换成新的 ProgramEntry 实例，
+            // 若走 RefreshRows() 会因引用不等而整表 Clear()+Add()，把滚动位置冲回顶部。
+            RefreshRowAfterDetail(p.Id);
+        }
+
+        /// <summary>按 Id 就地更新详情窗口改动的那一行；记录数变化（新增/删除）才整表刷新。</summary>
+        private void RefreshRowAfterDetail(string id)
+        {
+            if (Rows.Count != _cfg.Programs.Count) { RefreshRows(); return; }
+
+            var updated = _cfg.Programs.FirstOrDefault(x => x.Id == id);
+            var row = Rows.FirstOrDefault(r => r.P.Id == id);
+            if (updated == null || row == null) { RefreshRows(); return; }
+
+            row.SetProgram(updated);
+            row.SetState(ComputeState(updated));
+            UpdateStatusText();
         }
 
         // ---------------- 其他工具栏 ----------------
@@ -566,7 +691,7 @@ namespace PathwinderMgt.Views
             {
                 _cfg.Settings.ShortcutPrefix = dlg.PrefixResult;
                 ConfigManager.Save(_cfg);
-                MessageBox.Show("快捷方式前缀已保存，已有快捷方式将在下次启动时迁移为新前缀。", "提示",
+                MessageBox.Show(Loc.T("L_Main_PrefixSaved"), Loc.T("L_Common_Warning"),
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
@@ -580,12 +705,19 @@ namespace PathwinderMgt.Views
                 var result = await Task.Run(() => CleanupManager.Run(_cfg));
                 ConfigManager.Save(_cfg);
                 RefreshRows();
-                CleanupText.Text = _cfg.Settings.LastCleanupTime is DateTime t
-                    ? $"上次清理：{t:yyyy-MM-dd HH:mm:ss}（重建 {result.WorkspacesRebuilt}，删除孤儿 {result.OrphanDirsRemoved}）"
-                    : CleanupText.Text;
+                // RefreshRows 在行集合没变化时不会重建容器，此时若某行内容（显示名/路径）变过，
+                // Auto 列宽仍是旧值。刷新是用户表达"按当前数据重排"的意图，这里兜底重算一次。
+                RecalculateAutoColumns();
+                if (_cfg.Settings.LastCleanupTime is DateTime t)
+                {
+                    _cleanupTime = t;
+                    _cleanupRebuilt = result.WorkspacesRebuilt;
+                    _cleanupOrphans = result.OrphanDirsRemoved;
+                }
+                UpdateCleanupText();
                 AnimateRowsIn();
             }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "刷新失败"); }
+            catch (Exception ex) { MessageBox.Show(ex.Message, Loc.T("L_Main_RefreshFailed")); }
             finally { StopSpin(); } // 列表刷新结束才解除禁用
         }
 
@@ -639,23 +771,29 @@ namespace PathwinderMgt.Views
     }
 
     /// <summary>
-    /// GridView 列宽工具：WPF 的 Auto 列宽在 ObservableCollection 增删改后不会自动重算，
-    /// 需要先 UpdateLayout 让 ActualWidth 反映新内容，再锁 ActualWidth 后设回 NaN 触发重新测量。
+    /// 强制 WPF 重新测量所有 Auto（NaN）列宽。
+    /// 原理：Auto 列宽只在 ItemsSource 初始化时测一次；ObservableCollection.Move()
+    /// 不会触发重测。方法是先把 Auto 列临时设为 0，UpdateLayout 让 WPF 应用，
+    /// 再设回 NaN，WPF 就必须按新内容重新测量。
     /// </summary>
     internal static class GridViewExtensions
     {
-        public static void RefreshAutoColumns(this System.Windows.Controls.GridView gridView)
+        public static void RefreshAutoColumns(this System.Windows.Controls.GridView gridView,
+                                              System.Windows.Controls.ListView listView)
         {
-            if (gridView == null) return;
-            foreach (var col in gridView.Columns)
-            {
-                // 只重算 Auto 列；显式设了固定宽度的列（如操作列）必须跳过，
-                // 否则这里会把它重置回 Auto，按钮组合又会被裁掉
-                if (!double.IsNaN(col.Width)) continue;
-                if (col.ActualWidth <= 0) continue;
-                col.Width = col.ActualWidth;
-                col.Width = double.NaN;
-            }
+            if (gridView == null || listView == null) return;
+
+            // 收集所有 Auto 列（Width == NaN）
+            var autoCols = gridView.Columns.Where(c => double.IsNaN(c.Width)).ToList();
+            if (autoCols.Count == 0) return;
+
+            // 第一步：强制改变列宽 → 触发 WPF 认为需要重新测量
+            foreach (var col in autoCols) col.Width = 0;
+            listView.UpdateLayout();
+
+            // 第二步：回到 Auto（NaN） → WPF 必须按当前内容重新测量
+            foreach (var col in autoCols) col.Width = double.NaN;
+            listView.UpdateLayout();
         }
     }
 }

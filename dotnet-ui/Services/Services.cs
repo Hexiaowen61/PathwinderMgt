@@ -38,19 +38,19 @@ namespace PathwinderMgt.Services
         {
             string baseText = code switch
             {
-                PwCode.WorkspaceLocked => "无法删除工作区，请先关闭目标程序",
-                PwCode.HardLinkFailed => "创建硬链接失败，请检查磁盘和权限",
-                PwCode.ShortcutRewrite => "快捷方式改写失败，原快捷方式已备份",
-                PwCode.IniWrite => "规则写入失败，请检查工作区权限",
-                PwCode.BackupRestore => "原快捷方式路径不存在，请手动处理",
-                PwCode.NoPermission => "无权限：目标程序位于受保护目录，当前用户无法写入 Hookshot 授权文件，请以管理员身份运行管理器后重试",
-                PwCode.PeDetectFailed => "无法检测目标程序位数，请手动选择",
-                PwCode.Arm64Unsupported => "Hookshot 无 ARM64 版本，不支持该程序",
-                PwCode.RuleInvalid => "规则不合法",
-                PwCode.ConfigCorrupted => "配置文件损坏，已备份为 config.json.bak",
-                _ => "未知错误"
+                PwCode.WorkspaceLocked => Loc.T("L_Err_WorkspaceLocked"),
+                PwCode.HardLinkFailed => Loc.T("L_Err_HardLinkFailed"),
+                PwCode.ShortcutRewrite => Loc.T("L_Err_ShortcutRewrite"),
+                PwCode.IniWrite => Loc.T("L_Err_IniWrite"),
+                PwCode.BackupRestore => Loc.T("L_Err_BackupRestore"),
+                PwCode.NoPermission => Loc.T("L_Err_NoPermission"),
+                PwCode.PeDetectFailed => Loc.T("L_Err_PeDetectFailed"),
+                PwCode.Arm64Unsupported => Loc.T("L_Err_Arm64Unsupported"),
+                PwCode.RuleInvalid => Loc.T("L_Err_RuleInvalid"),
+                PwCode.ConfigCorrupted => Loc.T("L_Err_ConfigCorrupted"),
+                _ => Loc.T("L_Err_Unknown")
             };
-            return string.IsNullOrEmpty(detail) ? baseText : $"{baseText}（{detail}）";
+            return string.IsNullOrEmpty(detail) ? baseText : Loc.T("L_Err_WithDetail", baseText, detail);
         }
     }
 
@@ -574,23 +574,23 @@ namespace PathwinderMgt.Services
     {
         public static string Validate(Rule r)
         {
-            if (string.IsNullOrWhiteSpace(r.Name)) return "规则名不能为空";
-            if (string.IsNullOrWhiteSpace(r.OriginDirectory)) return $"规则「{r.Name}」的 OriginDirectory 不能为空";
-            if (string.IsNullOrWhiteSpace(r.TargetDirectory)) return $"规则「{r.Name}」的 TargetDirectory 不能为空";
-            if (!Path.IsPathRooted(r.OriginDirectory)) return $"规则「{r.Name}」的 OriginDirectory 必须是绝对路径";
-            if (!Path.IsPathRooted(r.TargetDirectory)) return $"规则「{r.Name}」的 TargetDirectory 必须是绝对路径";
+            if (string.IsNullOrWhiteSpace(r.Name)) return Loc.T("L_Rule_NameRequired");
+            if (string.IsNullOrWhiteSpace(r.OriginDirectory)) return Loc.T("L_Rule_OriginRequired", r.Name);
+            if (string.IsNullOrWhiteSpace(r.TargetDirectory)) return Loc.T("L_Rule_TargetRequired", r.Name);
+            if (!Path.IsPathRooted(r.OriginDirectory)) return Loc.T("L_Rule_OriginAbsolute", r.Name);
+            if (!Path.IsPathRooted(r.TargetDirectory)) return Loc.T("L_Rule_TargetAbsolute", r.Name);
             if (r.OriginDirectory.TrimEnd('\\').Equals(Path.GetPathRoot(r.OriginDirectory)?.TrimEnd('\\'),
                 StringComparison.OrdinalIgnoreCase))
-                return $"规则「{r.Name}」的 OriginDirectory 不能为盘符根目录";
+                return Loc.T("L_Rule_OriginRoot", r.Name);
             if (r.TargetDirectory.TrimEnd('\\').Equals(Path.GetPathRoot(r.TargetDirectory)?.TrimEnd('\\'),
                 StringComparison.OrdinalIgnoreCase))
-                return $"规则「{r.Name}」的 TargetDirectory 不能为盘符根目录";
+                return Loc.T("L_Rule_TargetRoot", r.Name);
             if (r.FilePatterns != null)
             {
                 foreach (var p in r.FilePatterns)
                 {
                     if (p != null && p.Contains('\\'))
-                        return $"规则「{r.Name}」的 FilePattern「{p}」不能含反斜杠";
+                        return Loc.T("L_Rule_PatternNoSlash", r.Name, p);
                 }
             }
             return null;
@@ -609,19 +609,19 @@ namespace PathwinderMgt.Services
                 string err = Validate(r);
                 if (err != null) return err;
 
-                if (!names.Add(r.Name.Trim())) return $"规则名重复：{r.Name}（规则名大小写敏感）";
+                if (!names.Add(r.Name.Trim())) return Loc.T("L_Rule_DuplicateName", r.Name);
                 if (!origins.Add(r.OriginDirectory.TrimEnd('\\')))
-                    return $"规则「{r.Name}」的 OriginDirectory 与其他规则重复";
+                    return Loc.T("L_Rule_DuplicateOrigin", r.Name);
 
                 for (int j = 0; j < targets.Count; j++)
                 {
                     if (IsNested(r.TargetDirectory, targets[j]))
-                        return $"规则「{r.Name}」的 TargetDirectory 与其他规则的 TargetDirectory 存在祖先/后代关系，必须完全不相关";
+                        return Loc.T("L_Rule_NestedTarget", r.Name);
                 }
                 foreach (var o in origins)
                 {
                     if (r.TargetDirectory.TrimEnd('\\').Equals(o, StringComparison.OrdinalIgnoreCase))
-                        return $"规则「{r.Name}」的 TargetDirectory 不能等于任何规则的 OriginDirectory";
+                        return Loc.T("L_Rule_TargetIsOrigin", r.Name);
                 }
                 targets.Add(r.TargetDirectory.TrimEnd('\\'));
             }
