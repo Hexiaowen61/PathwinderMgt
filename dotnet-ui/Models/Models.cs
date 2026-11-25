@@ -50,11 +50,11 @@ namespace PathwinderMgt.Models
         public string OriginalArguments { get; set; } = "";
         public string OriginalWorkingDir { get; set; } = "";
 
-        /// <summary>重定向模式：Simple（严格）/ SimplePro（Simple+读回退，默认）/ Overlay（合并目录视图）。写入 Pathwinder.ini 各规则节的 RedirectMode 行（Simple 省略该行）。</summary>
+        /// <summary>重定向模式：Simple（严格隔离，默认）/ SimplePro（Simple+读回退，不隔离）/ Overlay（合并目录视图）。写入 Pathwinder.ini 各规则节的 RedirectMode 行（Simple 省略该行）。</summary>
         public const string RedirectModeSimple = "Simple";
         public const string RedirectModeSimplePro = "SimplePro";
         public const string RedirectModeOverlay = "Overlay";
-        public string RedirectMode { get; set; } = RedirectModeSimplePro;
+        public string RedirectMode { get; set; } = RedirectModeSimple;
 
         /// <summary>本程序生效的规则集（登记时从全局内置模板自动带入一条默认规则，可编辑）</summary>
         public List<Rule> OverrideRules { get; set; } = new();

@@ -69,17 +69,14 @@ namespace PathwinderMgt.Views
             bool custom = p.OverrideRules.Any(r => r.RedirectMode != null);
             if (!custom)
             {
-                // 模式切换：以工作区 ini 为准；已有指令但 ini 未配置 RedirectMode 时按默认 SimplePro 补写入 ini
-                //（内核把未配置当严格 Simple，不显式补写会失去读回退）；未添加指令时沿用记录值。
+                // 模式切换：以工作区 ini 为准；ini 已存在但未配置 RedirectMode 时按严格 Simple 显示
+                //（内核缺省即 Simple）。这里不再补写 Simple Pro，避免已有指令被悄悄切成读回退、
+                // 失去数据隔离；未添加指令时沿用记录值。
                 string iniMode = WorkspaceManager.ReadPathwinderRedirectMode(p);
                 if (iniMode != null)
                     p.RedirectMode = iniMode;
                 else if (File.Exists(Path.Combine(AppPaths.WorkDir(p.Id), "Pathwinder.ini")))
-                {
-                    p.RedirectMode = ProgramEntry.RedirectModeSimplePro;
-                    WorkspaceManager.SetPathwinderRedirectMode(p);
-                    ConfigManager.Save(_cfg);
-                }
+                    p.RedirectMode = ProgramEntry.RedirectModeSimple;
             }
             CmbMode.SelectedIndex = custom ? 3 : p.RedirectMode switch
             {
@@ -202,7 +199,7 @@ namespace PathwinderMgt.Views
             catch (Exception ex) { HandleGeneric(ex); }
         }
 
-        // ---------------- 模式切换（立即重写 ini，不提示、不置脏）----------------
+        // ---------------- 模式切换（立即重写 ini；自定义→统一模式需确认）----------------
 
         /// <summary>自定义状态：任一规则带独立模式（详情页“自定义”选项为非持久化的 UI 推导）。</summary>
         private bool HasCustomRuleModes => _p.OverrideRules.Any(r => r.RedirectMode != null);
@@ -247,16 +244,10 @@ namespace PathwinderMgt.Views
                     r.RedirectMode = null;
             }
 
-            if (mode == _p.RedirectMode)
-            {
-                // 模式未变但可能刚清除了规则级值：保存并刷新面板状态
-                ConfigManager.Save(_cfg);
-                _rulesPanel?.SetCustomMode(false);
-                return;
-            }
             _p.RedirectMode = mode;
             try
             {
+                // 统一模式时也必须重写 ini：自定义期间各规则可能写入过独立的 RedirectMode 行
                 WorkspaceManager.SetPathwinderRedirectMode(_p); // 未添加指令时为空操作，Prepare 时按记录写入
                 ConfigManager.Save(_cfg);
                 _rulesPanel?.SetCustomMode(false);

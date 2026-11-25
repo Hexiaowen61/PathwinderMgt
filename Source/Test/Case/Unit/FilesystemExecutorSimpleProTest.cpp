@@ -50,8 +50,8 @@ namespace PathwinderTest
   // Verifies the conditions under which a simple-mode-with-read-fallback (Simple Pro) instruction
   // retries a failed open using the unredirected filename. Plain simple-mode instructions never
   // fall back, directories are never opened through the fallback, only not-found style failures
-  // trigger the fallback, and both write and delete access still fall back because a fallback only
-  // happens for files that live outside the redirected location but still need to be operated on.
+  // trigger the fallback, and write/delete accesses never fall back because a handle opened from
+  // the unredirected location could be used to write data outside the redirected target.
   TEST_CASE(FilesystemExecutor_NewFileHandle_UnredirectedFallbackConditions)
   {
     constexpr std::wstring_view kUnredirectedPath = L"C:\\TestDirectory\\TestFile.txt";
@@ -88,22 +88,22 @@ namespace PathwinderTest
          .forwardResult = NtStatus::kObjectPathNotFound,
          .expectedNumSystemCallInvocations = 2,
          .expectedReturnCode = NtStatus::kSuccess},
-        // Write access still falls back.
+        // Write access does not fall back (read fallback only), so the redirected target wins.
         {.useSimpleProInstruction = true,
          .desiredAccess = GENERIC_READ | GENERIC_WRITE,
          .createDisposition = FILE_OPEN,
          .createOptions = 0,
          .forwardResult = NtStatus::kObjectPathNotFound,
-         .expectedNumSystemCallInvocations = 2,
-         .expectedReturnCode = NtStatus::kSuccess},
-        // Delete access still falls back.
+         .expectedNumSystemCallInvocations = 1,
+         .expectedReturnCode = NtStatus::kObjectPathNotFound},
+        // Delete access does not fall back (read fallback only), so the redirected target wins.
         {.useSimpleProInstruction = true,
          .desiredAccess = DELETE,
          .createDisposition = FILE_OPEN,
          .createOptions = 0,
          .forwardResult = NtStatus::kObjectPathNotFound,
-         .expectedNumSystemCallInvocations = 2,
-         .expectedReturnCode = NtStatus::kSuccess},
+         .expectedNumSystemCallInvocations = 1,
+         .expectedReturnCode = NtStatus::kObjectPathNotFound},
         // Directory opens do not fall back.
         {.useSimpleProInstruction = true,
          .desiredAccess = GENERIC_READ,

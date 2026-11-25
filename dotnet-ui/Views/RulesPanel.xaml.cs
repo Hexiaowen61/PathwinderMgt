@@ -68,7 +68,7 @@ namespace PathwinderMgt.Views
         {
             ProgramEntry.RedirectModeSimple => 0,
             ProgramEntry.RedirectModeOverlay => 2,
-            _ => 1 // SimplePro（默认）
+            _ => 1 // SimplePro
         };
 
         private static string IndexToMode(int index) => index switch

@@ -64,7 +64,7 @@
                                Visibility="Collapsed"/>
                 </StackPanel>
 
-                <!-- 模式切换：立即重写工作区 Pathwinder.ini 生效；Simple=严格，SimplePro=读回退（默认），Overlay=合并目录视图，自定义=逐规则独立设置 -->
+                <!-- 模式切换：立即重写工作区 Pathwinder.ini 生效；Simple=严格隔离（默认），SimplePro=读回退（不隔离），Overlay=合并目录视图，自定义=逐规则独立设置 -->
                 <TextBlock Grid.Row="1" Grid.Column="2" Text="{DynamicResource L_Prog_Mode}" VerticalAlignment="Center" Margin="0,0,8,8"/>
                 <ComboBox Grid.Row="1" Grid.Column="3" Name="CmbMode" Width="220"
                           Style="{StaticResource ComboBoxBox}"
