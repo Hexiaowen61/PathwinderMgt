@@ -180,6 +180,113 @@ static std::optional<std::wstring> RewriteEmbeddedPaths(
   return std::nullopt;
 }
 
+/// Extracts the process image path from a command line, which is the first token. Surrounding
+/// quotes are removed, as is any leading whitespace.
+/// @param [in] commandLine Command line as supplied by the caller.
+/// @return Image path token, or an empty view if the command line contains no token.
+static std::wstring_view FirstCommandLineToken(std::wstring_view commandLine)
+{
+  size_t tokenBegin = 0;
+
+  while ((tokenBegin < commandLine.size()) && (L' ' == commandLine[tokenBegin]))
+  {
+    ++tokenBegin;
+  }
+
+  if (tokenBegin >= commandLine.size()) return std::wstring_view();
+
+  size_t tokenEnd = tokenBegin;
+
+  if (L'"' == commandLine[tokenBegin])
+  {
+    ++tokenBegin;
+    tokenEnd = tokenBegin;
+
+    while ((tokenEnd < commandLine.size()) && (L'"' != commandLine[tokenEnd]))
+    {
+      ++tokenEnd;
+    }
+  }
+  else
+  {
+    while ((tokenEnd < commandLine.size()) && (L' ' != commandLine[tokenEnd]))
+    {
+      ++tokenEnd;
+    }
+  }
+
+  return commandLine.substr(tokenBegin, tokenEnd - tokenBegin);
+}
+
+/// Creates the marker that Hookshot requires before it will inject a child process. A child whose
+/// executable lives inside a redirection target directory belongs to the redirected application
+/// and runs outside of this process, so without the marker it would see origin-drive paths that do
+/// not exist and silently fail. Application updates replace the contents of their own directories,
+/// which removes any marker placed there previously, so the marker is re-created every time such a
+/// child is started. Both the executable-specific marker and the directory-wide fallback are
+/// created, mirroring what the manager does for rejected child processes.
+/// @param [in] imagePath Absolute path of the child process executable.
+static void EnsureChildProcessInjectionAuthorized(std::wstring_view imagePath)
+{
+  if (imagePath.empty()) return;
+
+  const DWORD lastError = GetLastError();
+
+  auto createMarkerFile = [](const std::wstring& markerPath, bool& created) -> bool
+  {
+    if (INVALID_FILE_ATTRIBUTES != GetFileAttributesW(markerPath.c_str())) return true;
+
+    const HANDLE marker =
+        CreateFileW(markerPath.c_str(),
+                    GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    nullptr,
+                    CREATE_ALWAYS,
+                    FILE_ATTRIBUTE_NORMAL,
+                    nullptr);
+
+    if (INVALID_HANDLE_VALUE == marker) return false;
+
+    created = true;
+    CloseHandle(marker);
+    return true;
+  };
+
+  std::wstring executableMarkerPath(imagePath);
+  executableMarkerPath.append(L".hookshot");
+
+  bool markerCreated = false;
+
+  if (true == createMarkerFile(executableMarkerPath, markerCreated))
+  {
+    if (true == markerCreated)
+    {
+      Infra::Message::OutputFormatted(
+          Infra::Message::ESeverity::Info,
+          L"EnsureChildProcessInjectionAuthorized: Created \"%s\" so that child process \"%.*s\" "
+          L"is injected and sees redirected paths.",
+          executableMarkerPath.c_str(),
+          static_cast<int>(imagePath.length()),
+          imagePath.data());
+    }
+
+    SetLastError(lastError);
+    return;
+  }
+
+  // Fallback: a marker that covers every executable in the same directory, for situations where
+  // the executable-specific file cannot be created.
+  const size_t lastSeparator = imagePath.find_last_of(L"\\/");
+  if (std::wstring_view::npos != lastSeparator)
+  {
+    std::wstring directoryMarkerPath(imagePath.substr(0, lastSeparator));
+    directoryMarkerPath.append(L"\\.hookshot");
+    createMarkerFile(directoryMarkerPath, markerCreated);
+  }
+
+  SetLastError(lastError);
+}
+
 /// Determines the path that an executable should actually be launched from, applying a redirection
 /// rule when one matches and the redirected file exists.
 /// @param [in] imagePath Absolute path of the executable as requested by the caller.
@@ -503,6 +610,30 @@ BOOL Pathwinder::Hooks::DynamicHook_CreateProcessW::Hook(
         environmentToUse = rebuiltEnvironmentBlock.data();
       }
     }
+  }
+
+  // A redirected application may start helper processes from inside a redirection target
+  // directory. Such a child is part of the redirected application, but it runs in a new process
+  // that only takes part in the redirection if Hookshot injects it, and Hookshot requires an
+  // authorization marker next to the child executable. Application updates replace the contents of
+  // their own directories and thereby remove markers that were placed there previously, which is
+  // why a marker is ensured here, before the process is actually created and before Hookshot's own
+  // hook gets a chance to attempt the injection.
+  std::wstring_view childImagePath;
+
+  if (nullptr != lpApplicationName)
+  {
+    childImagePath = lpApplicationName;
+  }
+  else if (nullptr != lpCommandLine)
+  {
+    childImagePath = FirstCommandLineToken(lpCommandLine);
+  }
+
+  if ((false == childImagePath.empty()) &&
+      (true == FilesystemDirectorInstance().IsPathWithinTargetDirectory(childImagePath)))
+  {
+    EnsureChildProcessInjectionAuthorized(childImagePath);
   }
 
   const BOOL callSucceeded = Original(

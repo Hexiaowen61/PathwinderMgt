@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using PathwinderMgt.Models;
 using PathwinderMgt.Services;
 
@@ -20,6 +21,13 @@ namespace PathwinderMgt.Views
         public ProgramWindow(AppConfig cfg, ProgramEntry p, ProgramService service)
         {
             InitializeComponent();
+            // Esc 等同右上角叉叉：用冒泡阶段的 KeyDown，控件已处理的 Esc（如收起 ComboBox 下拉）不关窗口
+            KeyDown += (_, e) =>
+            {
+                if (e.Key != Key.Escape) return;
+                e.Handled = true;
+                Close();
+            };
             _cfg = cfg;
             _service = service;
 
@@ -27,7 +35,16 @@ namespace PathwinderMgt.Views
             CmbArch.Items.Add(ProgramEntry.X86);
             if (p.Architecture == PeDetector.Arm64) CmbArch.Items.Add(PeDetector.Arm64);
 
+            // 语言切换后指令内容等代码赋值的文本需重设
+            Loc.LanguageChanged += OnLanguageChanged;
+            Closed += (_, _) => Loc.LanguageChanged -= OnLanguageChanged;
+
             LoadEntry(p);
+        }
+
+        private void OnLanguageChanged()
+        {
+            if (_p != null) RefreshManagedState();
         }
 
         /// <summary>用指定程序记录填充全部界面字段（拷贝功能文档第 6 节；拷贝成功后切换到新记录）。</summary>
@@ -103,8 +120,7 @@ namespace PathwinderMgt.Views
                     {
                         // ini 写入失败：回退为显示“更新指令”，用户可手动重试
                         _service.Log.Error($"规则变更同步 ini 失败：{ex.Message}");
-                        MessageBox.Show("规则已保存，但同步到工作区失败：" + ex.Message +
-                                        "\n可点击「更新指令」重试。", "同步失败",
+                        MessageBox.Show(Loc.T("L_Prog_SyncFailedMsg", ex.Message), Loc.T("L_Prog_SyncFailedTitle"),
                             MessageBoxButton.OK, MessageBoxImage.Warning);
                         _dirty = true;
                     }
@@ -150,20 +166,20 @@ namespace PathwinderMgt.Views
         {
             if (!managed)
             {
-                TxtInstruction.Text = "（未添加指令）";
+                TxtInstruction.Text = Loc.T("L_Prog_NoCommand");
                 return;
             }
             try
             {
                 var lnk = ShortcutManager.Read(_p.OriginalShortcut);
                 TxtInstruction.Text =
-                    $"目标：{lnk.TargetPath}{Environment.NewLine}" +
-                    $"参数：{lnk.Arguments}{Environment.NewLine}" +
-                    $"工作目录：{lnk.WorkingDirectory}";
+                    Loc.T("L_Prog_InstrTarget", lnk.TargetPath) + Environment.NewLine +
+                    Loc.T("L_Prog_InstrArgs", lnk.Arguments) + Environment.NewLine +
+                    Loc.T("L_Prog_InstrWorkDir", lnk.WorkingDirectory);
             }
             catch
             {
-                TxtInstruction.Text = "（已受管，但读取快捷方式失败）";
+                TxtInstruction.Text = Loc.T("L_Prog_InstrReadFail");
             }
         }
 
@@ -219,8 +235,8 @@ namespace PathwinderMgt.Views
             if (HasCustomRuleModes)
             {
                 string display = CmbMode.SelectedIndex switch { 0 => "Simple", 2 => "Overlay", _ => "SimplePro" };
-                if (MessageBox.Show($"将清除各规则的独立模式，统一为「{display}」，是否继续？",
-                        "模式切换", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+                if (MessageBox.Show(Loc.T("L_Prog_ModeCustomConfirm", display),
+                        Loc.T("L_Prog_Mode"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
                 {
                     _loading = true;
                     CmbMode.SelectedIndex = 3; // 回退到自定义
@@ -247,7 +263,7 @@ namespace PathwinderMgt.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show("更新重定向模式失败：" + ex.Message, "提示",
+                MessageBox.Show(Loc.T("L_Prog_ModeUpdateFailed", ex.Message), Loc.T("L_Common_Warning"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -264,7 +280,7 @@ namespace PathwinderMgt.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show("更新 Hookshot 日志设置失败：" + ex.Message, "提示",
+                MessageBox.Show(Loc.T("L_Prog_LogUpdateFailed", ex.Message), Loc.T("L_Common_Warning"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -275,9 +291,8 @@ namespace PathwinderMgt.Views
             if (_loading) return;
             bool excluded = ChkExcluded.IsChecked == true;
             if (excluded && IsCurrentlyManaged() && MessageBox.Show(
-                    "该程序当前已添加指令，标记为“不管理”后已有指令保持不变；\n" +
-                    "如需恢复原快捷方式，可先取消标记再移除指令。\n\n确认标记？",
-                    "标记为不管理", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+                    Loc.T("L_Prog_ExcludedMsg"),
+                    Loc.T("L_Prog_ExcludedTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             {
                 _loading = true;
                 ChkExcluded.IsChecked = false;
@@ -298,8 +313,8 @@ namespace PathwinderMgt.Views
                          rules.Any(r => string.IsNullOrWhiteSpace(r.OriginDirectory) ||
                                         string.IsNullOrWhiteSpace(r.TargetDirectory));
             if (empty && MessageBox.Show(
-                    "当前程序没有可用的生效规则（或规则路径为空），添加后启动时不会产生重定向。\n\n是否仍要继续？",
-                    "规则未配置", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    Loc.T("L_Main_RulesEmptyMsg"),
+                    Loc.T("L_Main_RulesEmptyTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
             try
             {
@@ -307,7 +322,7 @@ namespace PathwinderMgt.Views
                 ConfigManager.Save(_cfg);
                 _dirty = false;
                 RefreshManagedState();
-                MessageBox.Show("指令已添加，快捷方式已改写并加上前缀标记。", "完成",
+                MessageBox.Show(Loc.T("L_Prog_AddedMsg"), Loc.T("L_Prog_Done"),
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (PwException ex) { HandleError(ex); }
@@ -323,7 +338,7 @@ namespace PathwinderMgt.Views
                 ConfigManager.Save(_cfg);
                 _dirty = false;
                 RefreshManagedState();
-                MessageBox.Show("指令已更新，工作区与快捷方式已按最新规则重新生成。", "完成",
+                MessageBox.Show(Loc.T("L_Prog_UpdatedMsg"), Loc.T("L_Prog_Done"),
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (PwException ex) { HandleError(ex); }
@@ -332,8 +347,8 @@ namespace PathwinderMgt.Views
 
         private void BtnRemove_Click(object sender, RoutedEventArgs e)
         {
-            if (MessageBox.Show("确认移除该程序的 Pathwinder 指令？原快捷方式将从备份恢复。",
-                    "确认", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+            if (MessageBox.Show(Loc.T("L_Prog_RemoveConfirm"),
+                    Loc.T("L_Prog_Confirm"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
             try
             {
                 _service.RemoveInstruction(_p);
@@ -348,8 +363,8 @@ namespace PathwinderMgt.Views
         private void BtnLaunch_Click(object sender, RoutedEventArgs e)
         {
             if (ProgramService.IsTargetRunning(_p) &&
-                MessageBox.Show("检测到目标程序已在运行，Hookshot 无法注入已运行的进程。\n\n仍要通过快捷方式启动？",
-                    "程序已在运行", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                MessageBox.Show(Loc.T("L_Prog_RunningMsg"),
+                    Loc.T("L_Prog_RunningTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
             try { _service.Launch(_p); }
             catch (PwException ex) { HandleError(ex); }
@@ -358,8 +373,8 @@ namespace PathwinderMgt.Views
 
         private void BtnDelete_Click(object sender, RoutedEventArgs e)
         {
-            if (MessageBox.Show("确认删除该程序的全部记录？\n\n若当前仍受管，会先恢复原快捷方式并清理工作区。",
-                    "删除记录", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+            if (MessageBox.Show(Loc.T("L_Prog_DeleteConfirm"),
+                    Loc.T("L_Prog_DeleteTitle"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
             try
             {
                 _service.DeleteEntry(_p);
@@ -386,7 +401,7 @@ namespace PathwinderMgt.Views
         }
 
         private void ShowError(string message) =>
-            MessageBox.Show(message, "操作失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(message, Loc.T("L_Main_OpFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
 
         /// <summary>业务异常：无权限时引导管理员重启，其余正常报错。</summary>
         private void HandleError(PwException ex)
@@ -399,7 +414,7 @@ namespace PathwinderMgt.Views
         private void HandleGeneric(Exception ex)
         {
             _service.Log.Error("详情页操作未处理异常：" + ex);
-            ShowError($"操作失败：{ex.Message}\n\n详细信息已写入 logs\\manager.log。");
+            ShowError(Loc.T("L_Main_OpFailedDetail", ex.Message));
         }
     }
 }

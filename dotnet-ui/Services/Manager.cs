@@ -1098,7 +1098,7 @@ namespace PathwinderMgt.Services
             if (rules.Count == 0)
             {
                 if (!allowEmptyRules)
-                    throw new PwException(PwCode.RuleInvalid, "没有任何生效规则");
+                    throw new PwException(PwCode.RuleInvalid, Loc.T("L_Rule_NoEffectiveRules"));
                 Log.Warn($"程序 {p.DisplayName} 生效规则为空，将生成空 Pathwinder.ini");
             }
             else

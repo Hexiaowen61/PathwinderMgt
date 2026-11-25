@@ -40,7 +40,23 @@ namespace PathwinderMgt.Services
         public string CodeBackground { get; set; } = "#EEF2F7";
         public string CodeColor { get; set; } = "#1F2937";
 
-        public static MarkdownTheme Default { get; } = new MarkdownTheme();
+        /// <summary>浅色主题配色（默认值）。</summary>
+        public static MarkdownTheme Light { get; } = new MarkdownTheme();
+
+        /// <summary>深色主题配色：正文/标题取浅色，行内代码块用深底浅字。</summary>
+        public static MarkdownTheme Dark { get; } = new MarkdownTheme
+        {
+            TextColor = "#C2C6CC",
+            HeadingColor = "#E8EAED",
+            CodeBackground = "#33363B",
+            CodeColor = "#E8EAED"
+        };
+
+        /// <summary>默认配色（浅色），保留给不关心主题的调用方。</summary>
+        public static MarkdownTheme Default => Light;
+
+        /// <summary>按界面当前主题（深色 / 浅色）选择配色。</summary>
+        public static MarkdownTheme FromTheme(bool isDark) => isDark ? Dark : Light;
     }
 
     /// <summary>

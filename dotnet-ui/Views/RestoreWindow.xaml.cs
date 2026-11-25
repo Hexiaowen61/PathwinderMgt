@@ -31,7 +31,7 @@ namespace PathwinderMgt.Views
         {
             InitializeComponent();
             _prefix = string.IsNullOrEmpty(prefix) ? Settings.DefaultShortcutPrefix : prefix;
-            AppendLog("请拖入需要恢复的快捷方式");
+            AppendLog(Loc.T("L_Restore_DragHint"));
             SourceInitialized += (_, _) =>
             {
                 if (new WindowsPrincipal(WindowsIdentity.GetCurrent())
@@ -63,16 +63,16 @@ namespace PathwinderMgt.Views
         private async void OnFilesDropped(IDataObject data)
         {
             if (data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return;
-            if (_busy) { AppendLog("正在处理上一批，请稍候…"); return; }
+            if (_busy) { AppendLog(Loc.T("L_Restore_Busy")); return; }
             _busy = true;
             try
             {
                 var lnks = files.Where(f => string.Equals(Path.GetExtension(f), ".lnk", StringComparison.OrdinalIgnoreCase)).ToList();
                 foreach (string skipped in files.Except(lnks))
-                    AppendLog($"跳过（非 .lnk 文件）：{Path.GetFileName(skipped)}");
+                    AppendLog(Loc.T("L_Restore_SkipNonLnk", Path.GetFileName(skipped)));
                 if (lnks.Count == 0) return;
 
-                AppendLog($"开始处理 {lnks.Count} 个快捷方式…");
+                AppendLog(Loc.T("L_Restore_Start", lnks.Count));
                 var results = await Task.Run(() =>
                     lnks.Select(f => (File: f, R: ShortcutRestorer.Restore(f, _prefix))).ToList());
 
@@ -80,12 +80,12 @@ namespace PathwinderMgt.Views
                 {
                     string name = Path.GetFileName(file);
                     if (r.Ok)
-                        AppendLog($"已恢复：{name} → {r.NewPath}" +
-                                  (string.IsNullOrEmpty(r.Warning) ? "" : $"（警告：{r.Warning}）"));
+                        AppendLog(Loc.T("L_Restore_Ok", name, r.NewPath) +
+                                  (string.IsNullOrEmpty(r.Warning) ? "" : Loc.T("L_Restore_Warn", r.Warning)));
                     else
-                        AppendLog($"恢复失败：{name} — {r.Error}");
+                        AppendLog(Loc.T("L_Restore_Fail", name, r.Error));
                 }
-                AppendLog($"本批完成：成功 {results.Count(x => x.R.Ok)}，失败 {results.Count(x => !x.R.Ok)}");
+                AppendLog(Loc.T("L_Restore_Done", results.Count(x => x.R.Ok), results.Count(x => !x.R.Ok)));
             }
             finally
             {

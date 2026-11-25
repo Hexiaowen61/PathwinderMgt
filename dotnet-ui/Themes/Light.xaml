@@ -1,0 +1,42 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- 浅色主题调色板：所有界面颜色都从这里取，切换主题时整份字典被替换 -->
+
+    <SolidColorBrush x:Key="WindowBg" Color="#F5F6F8"/>
+    <SolidColorBrush x:Key="Surface" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SurfaceAlt" Color="#F9FAFB"/>
+    <SolidColorBrush x:Key="Border" Color="#E5E7EB"/>
+    <SolidColorBrush x:Key="BorderInput" Color="#D0D5DD"/>
+    <SolidColorBrush x:Key="BorderStrong" Color="#98A2B3"/>
+    <SolidColorBrush x:Key="Divider" Color="#F1F2F4"/>
+    <SolidColorBrush x:Key="HoverBg" Color="#EAECEF"/>
+    <SolidColorBrush x:Key="HoverSoft" Color="#F3F4F6"/>
+
+    <SolidColorBrush x:Key="TextPrimary" Color="#111827"/>
+    <SolidColorBrush x:Key="TextBody" Color="#1F2937"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#374151"/>
+    <SolidColorBrush x:Key="TextMuted" Color="#6B7280"/>
+    <SolidColorBrush x:Key="TextFaint" Color="#9CA3AF"/>
+
+    <SolidColorBrush x:Key="Accent" Color="#2563EB"/>
+    <SolidColorBrush x:Key="AccentHover" Color="#1D4ED8"/>
+    <SolidColorBrush x:Key="OnAccent" Color="#FFFFFF"/>
+
+    <SolidColorBrush x:Key="Danger" Color="#DC2626"/>
+    <SolidColorBrush x:Key="DangerHover" Color="#B91C1C"/>
+    <SolidColorBrush x:Key="DangerBorder" Color="#FCA5A5"/>
+    <SolidColorBrush x:Key="Success" Color="#16A34A"/>
+
+    <SolidColorBrush x:Key="StatusOkBg" Color="#DCFCE7"/>
+    <SolidColorBrush x:Key="StatusOkFg" Color="#166534"/>
+    <SolidColorBrush x:Key="StatusWarnBg" Color="#FEF3C7"/>
+    <SolidColorBrush x:Key="StatusWarnFg" Color="#92400E"/>
+    <SolidColorBrush x:Key="StatusErrorBg" Color="#FEE2E2"/>
+    <SolidColorBrush x:Key="StatusErrorFg" Color="#991B1B"/>
+    <SolidColorBrush x:Key="StatusIdleBg" Color="#E5E7EB"/>
+    <SolidColorBrush x:Key="StatusIdleFg" Color="#4B5563"/>
+
+    <SolidColorBrush x:Key="RowHover" Color="#F9FAFB"/>
+    <SolidColorBrush x:Key="RowSelected" Color="#EFF6FF"/>
+</ResourceDictionary>
