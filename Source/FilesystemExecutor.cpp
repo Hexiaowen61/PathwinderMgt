@@ -1587,8 +1587,15 @@ namespace Pathwinder
       // way refers to the real unredirected file, so it is not placed into the open handle
       // store; its true path already equals the path the application requested, hence no path
       // illusion is needed.
+      // The fallback is restricted to read-only accesses: an open that permits writing or
+      // deleting must never be serviced from the unredirected location, otherwise data can be
+      // written back outside the redirected target and isolation is lost.
+      const FileAccessMode requestedAccessMode = FileAccessModeFromNtParameter(desiredAccess);
+      const bool readFallbackAllowed =
+          ((false == requestedAccessMode.AllowsWrite()) &&
+           (false == requestedAccessMode.AllowsDelete()));
       if ((false == NT_SUCCESS(systemCallResult)) && (FILE_OPEN == createDisposition) &&
-          (0 == (createOptions & FILE_DIRECTORY_FILE)))
+          (0 == (createOptions & FILE_DIRECTORY_FILE)) && (true == readFallbackAllowed))
       {
         const std::wstring_view composedUnredirectedPath =
             ((true == operationContext.composedInputPath.has_value())
