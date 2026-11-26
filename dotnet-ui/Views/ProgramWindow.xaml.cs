@@ -96,7 +96,8 @@ namespace PathwinderMgt.Views
         private void RebuildRulesPanel()
         {
             bool custom = _p.OverrideRules.Any(r => r.RedirectMode != null);
-            var panel = new RulesPanel(_p.OverrideRules, custom, () => _p.RedirectMode);
+            var panel = new RulesPanel(_p.OverrideRules, custom, () => _p.RedirectMode,
+                ruleName => ConfigManager.ComputeDefaultTargetDir(_p.DisplayName, _p.Id, ruleName));
             _rulesPanel = panel;
             panel.Changed += (_, _) =>
             {
@@ -303,9 +304,9 @@ namespace PathwinderMgt.Views
             bool empty = rules.Count == 0 ||
                          rules.Any(r => string.IsNullOrWhiteSpace(r.OriginDirectory) ||
                                         string.IsNullOrWhiteSpace(r.TargetDirectory));
-            if (empty && MessageBox.Show(
+            if (empty && QuietMessageBox.Show(
                     Loc.T("L_Main_RulesEmptyMsg"),
-                    Loc.T("L_Main_RulesEmptyTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    Loc.T("L_Main_RulesEmptyTitle"), MessageBoxButton.YesNo) != MessageBoxResult.Yes)
                 return;
             try
             {
@@ -313,8 +314,7 @@ namespace PathwinderMgt.Views
                 ConfigManager.Save(_cfg);
                 _dirty = false;
                 RefreshManagedState();
-                MessageBox.Show(Loc.T("L_Prog_AddedMsg"), Loc.T("L_Prog_Done"),
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                QuietMessageBox.Show(Loc.T("L_Prog_AddedMsg"), Loc.T("L_Prog_Done"));
             }
             catch (PwException ex) { HandleError(ex); }
             catch (Exception ex) { HandleGeneric(ex); }
@@ -329,8 +329,7 @@ namespace PathwinderMgt.Views
                 ConfigManager.Save(_cfg);
                 _dirty = false;
                 RefreshManagedState();
-                MessageBox.Show(Loc.T("L_Prog_UpdatedMsg"), Loc.T("L_Prog_Done"),
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                QuietMessageBox.Show(Loc.T("L_Prog_UpdatedMsg"), Loc.T("L_Prog_Done"));
             }
             catch (PwException ex) { HandleError(ex); }
             catch (Exception ex) { HandleGeneric(ex); }
@@ -338,8 +337,8 @@ namespace PathwinderMgt.Views
 
         private void BtnRemove_Click(object sender, RoutedEventArgs e)
         {
-            if (MessageBox.Show(Loc.T("L_Prog_RemoveConfirm"),
-                    Loc.T("L_Prog_Confirm"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+            if (QuietMessageBox.Show(Loc.T("L_Prog_RemoveConfirm"),
+                    Loc.T("L_Prog_Confirm"), MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
             try
             {
                 _service.RemoveInstruction(_p);
@@ -354,8 +353,8 @@ namespace PathwinderMgt.Views
         private void BtnLaunch_Click(object sender, RoutedEventArgs e)
         {
             if (ProgramService.IsTargetRunning(_p) &&
-                MessageBox.Show(Loc.T("L_Prog_RunningMsg"),
-                    Loc.T("L_Prog_RunningTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                QuietMessageBox.Show(Loc.T("L_Prog_RunningMsg"),
+                    Loc.T("L_Prog_RunningTitle"), MessageBoxButton.YesNo) != MessageBoxResult.Yes)
                 return;
             try { _service.Launch(_p); }
             catch (PwException ex) { HandleError(ex); }

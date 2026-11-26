@@ -72,7 +72,8 @@
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource L_Rules_Origin}" VerticalAlignment="Center" Margin="0,0,8,6"/>
                 <TextBox Grid.Row="1" Grid.Column="1" Name="TxtOrigin"
-                         Style="{StaticResource InputBox}" Margin="0,0,0,6"/>
+                         Style="{StaticResource InputBox}" Margin="0,0,0,6"
+                         TextChanged="TxtOrigin_TextChanged"/>
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource L_Rules_Target}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                 <TextBox Grid.Row="2" Grid.Column="1" Name="TxtTarget"

@@ -178,6 +178,43 @@ namespace PathwinderMgt.Views
                 MessageBox.Show(string.Join(Environment.NewLine + Environment.NewLine, notices),
                     Loc.T("L_Main_StartupTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+
+            // 每日首次启动静默检查更新：有新版本才提示，无更新/失败都不打扰
+            _ = CheckDailyUpdateAsync();
+        }
+
+        /// <summary>
+        /// 每日首次启动静默检查更新：当天已检查过则跳过；有新版本按手动检查同样的方式提示，
+        /// 已是最新或网络失败都不弹窗（失败不记录日期，下次启动重试）。
+        /// </summary>
+        private async Task CheckDailyUpdateAsync()
+        {
+            try
+            {
+                var settings = _cfg?.Settings;
+                if (settings == null || settings.LastUpdateCheckDate?.Date == DateTime.Today) return;
+
+                var info = await UpdateChecker.FetchLatestAsync();
+                if (info == null) return; // 网络不可用或没有 Release：静默跳过，不记录日期
+
+                // 拿到有效结果（含 tag 无法解析的情况）即记为今天已检查，避免反复请求
+                settings.LastUpdateCheckDate = DateTime.Today;
+                ConfigManager.Save(_cfg);
+
+                if (info.Version == null || info.Version <= UpdateChecker.CurrentVersion) return;
+
+                string notes = string.IsNullOrWhiteSpace(info.Notes) ? Loc.T("L_About_NoNotes") : info.Notes.Trim();
+                if (notes.Length > 800) notes = notes.Substring(0, 800) + "…";
+                var result = MessageBox.Show(this,
+                    Loc.T("L_About_NewVersion", info.Tag, UpdateChecker.CurrentVersion, notes),
+                    Loc.T("L_About_CheckUpdate"), MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (result == MessageBoxResult.Yes)
+                    Process.Start(new ProcessStartInfo(info.PageUrl) { UseShellExecute = true });
+            }
+            catch
+            {
+                // 静默检查失败不打扰用户
+            }
         }
 
         /// <summary>状态栏右侧清理统计文案（语言切换时也走这里重绘）。</summary>
@@ -487,9 +524,9 @@ namespace PathwinderMgt.Views
                                       string.IsNullOrWhiteSpace(r.TargetDirectory));
             });
             if (!anyEmpty) return true;
-            return MessageBox.Show(
+            return QuietMessageBox.Show(
                 Loc.T("L_Main_RulesEmptyMsg"),
-                Loc.T("L_Main_RulesEmptyTitle"), MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+                Loc.T("L_Main_RulesEmptyTitle"), MessageBoxButton.YesNo) == MessageBoxResult.Yes;
         }
 
         private void BtnAddAll_Click(object sender, RoutedEventArgs e)
@@ -509,8 +546,8 @@ namespace PathwinderMgt.Views
         {
             var targets = Rows.Where(r => r.CanRemove).ToList();
             if (targets.Count == 0) { MessageBox.Show(Loc.T("L_Main_NoRemoveTargets")); return; }
-            if (MessageBox.Show(Loc.T("L_Main_ConfirmRemoveAll", targets.Count),
-                    Loc.T("L_Main_Confirm"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+            if (QuietMessageBox.Show(Loc.T("L_Main_ConfirmRemoveAll", targets.Count),
+                    Loc.T("L_Main_Confirm"), MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
 
             var errors = RunBatch(targets, p => _service.RemoveInstruction(p), out _);
             ConfigManager.Save(_cfg);
@@ -795,5 +832,20 @@ namespace PathwinderMgt.Views
             foreach (var col in autoCols) col.Width = double.NaN;
             listView.UpdateLayout();
         }
+    }
+
+    /// <summary>
+    /// 无提示音的 MessageBox：添加 / 更新 / 移除指令等高频操作不播放系统提示音。
+    /// Windows 的提示音由消息框图标触发（无图标即静音），因此统一使用 MessageBoxImage.None。
+    /// </summary>
+    internal static class QuietMessageBox
+    {
+        public static MessageBoxResult Show(string text, string title,
+                                            MessageBoxButton buttons = MessageBoxButton.OK)
+            => MessageBox.Show(text, title, buttons, MessageBoxImage.None);
+
+        public static MessageBoxResult Show(Window owner, string text, string title,
+                                            MessageBoxButton buttons = MessageBoxButton.OK)
+            => MessageBox.Show(owner, text, title, buttons, MessageBoxImage.None);
     }
 }

@@ -87,6 +87,8 @@ namespace PathwinderMgt.Models
         public DateTime? LastCleanupTime { get; set; }
         /// <summary>首次启动时间（延迟展示依据，如联系方式满 3 天才显示）。仅首次运行时写入。</summary>
         public DateTime? FirstLaunchTime { get; set; }
+        /// <summary>最近一次自动检查更新的日期（每日首次启动静默检查一次；手动检查不更新此值）。</summary>
+        public DateTime? LastUpdateCheckDate { get; set; }
         /// <summary>桌面受管快捷方式的文件名前缀，添加指令时自动加上。空/非法时回退默认值。</summary>
         public string ShortcutPrefix { get; set; } = DefaultShortcutPrefix;
         /// <summary>启动时不再提示缺少 VC++ 运行库（可在设置窗口重新开启）。</summary>

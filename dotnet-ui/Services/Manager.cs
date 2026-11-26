@@ -237,33 +237,50 @@ namespace PathwinderMgt.Services
         }
 
         /// <summary>
-        /// 程序的默认规则：复制内置全局模板（AppData 重定向），目标目录 = 管理器目录\data\&lt;程序名&gt;
-        /// （部署在 D:\APP\PathwinderMgt 时即 D:\APP\PathwinderMgt\data\&lt;程序名&gt;）；
-        /// 目录不可创建（D 盘不存在或不可写等）时降级到 C:\PathwinderMgt\data\&lt;程序名&gt;。
+        /// 程序的默认规则：复制内置全局模板（Users 重定向），目标目录 =
+        /// &lt;管理器 exe 所在目录&gt;\data\&lt;程序名&gt;\&lt;规则名&gt;（如 data\百度网盘\Users）；
+        /// 每条规则独立子目录，避免规则之间目标重名/嵌套。路径按安装位置动态推导，不含任何固定盘符。
         /// </summary>
         internal static List<Rule> CreateDefaultOverrideRules(AppConfig cfg, string displayName, string id)
         {
             var template = cfg.GlobalRules.FirstOrDefault(r => r.BuiltIn) ?? CreateBuiltInRule();
             var rule = template.Clone();
             rule.BuiltIn = false; // 程序私有规则，可编辑
-            rule.TargetDirectory = DefaultTargetDir(displayName, id);
+            // 规则名取源目录最后一级（C:\Users → Users，C:\Users\39313 → 39313），目标目录同步使用该名字
+            rule.Name = RuleNameFromOrigin(rule.OriginDirectory, rule.Name);
+            rule.TargetDirectory = DefaultTargetDir(displayName, id, rule.Name);
             return new List<Rule> { rule };
         }
 
-        private static string DefaultTargetDir(string displayName, string id)
+        /// <summary>
+        /// 从目录路径提取最后一级作为规则名（"D:\aa\bbc" → "bbc"）；无法提取时返回 fallback
+        /// （fallback 为空时返回 null）。
+        /// </summary>
+        internal static string RuleNameFromOrigin(string origin, string fallback)
+        {
+            string trimmed = (origin ?? "").Trim().TrimEnd('\\', '/');
+            int idx = trimmed.LastIndexOfAny(new[] { '\\', '/' });
+            string last = idx >= 0 ? trimmed.Substring(idx + 1) : trimmed;
+            string safe = string.Concat(last.Split(Path.GetInvalidFileNameChars())).Trim();
+            if (safe.Length > 0) return safe;
+            return string.IsNullOrEmpty(fallback) ? null : fallback;
+        }
+
+        internal static string DefaultTargetDir(string displayName, string id, string ruleName)
+        {
+            string target = ComputeDefaultTargetDir(displayName, id, ruleName);
+            try { Directory.CreateDirectory(target); } catch { }
+            return target;
+        }
+
+        /// <summary>计算（不创建）默认目标路径：管理器目录\data\&lt;程序名&gt;\&lt;规则名&gt;。</summary>
+        internal static string ComputeDefaultTargetDir(string displayName, string id, string ruleName)
         {
             string safe = string.Concat((displayName ?? "").Split(Path.GetInvalidFileNameChars())).Trim();
             if (safe.Length == 0) safe = id;
-            try
-            {
-                string primary = Path.Combine(AppPaths.AppDir, "data", safe);
-                Directory.CreateDirectory(primary);
-                return primary;
-            }
-            catch
-            {
-                return Path.Combine(@"C:\PathwinderMgt\data", safe);
-            }
+            string safeRule = string.Concat((ruleName ?? "").Split(Path.GetInvalidFileNameChars())).Trim();
+            if (safeRule.Length == 0) safeRule = "Users";
+            return Path.Combine(AppPaths.AppDir, "data", safe, safeRule);
         }
 
         /// <summary>临时文件 + 原子替换（文档第 7 节并发保护）。</summary>
@@ -1048,28 +1065,42 @@ namespace PathwinderMgt.Services
         }
 
         /// <summary>
-        /// 目标路径编号（拷贝功能文档 4.1）：最后一段含基础名时重建为新显示名，并去掉旧显示名遗留的编号链
-        /// （如 "微信 3 2" → "微信 4"，保证目录名与快捷方式名称一致）；父级路径中出现的仍整段替换；
-        /// 最后一段不含基础名时在末段追加编号。
+        /// 目标路径编号（拷贝功能文档 4.1）：含基础名的那一段重建为新显示名，并去掉旧显示名遗留的编号链
+        /// （如 "微信 3 2" → "微信 4"，保证目录名与快捷方式名称一致）。
+        /// 程序名可能在最后一段（旧布局 data\微信），也可能在倒数第二段（新布局 data\微信\Users）；
+        /// 都不含基础名时在末段追加编号。
         /// </summary>
         private static string NumberTargetDir(string target, string baseName, string newName, int number)
         {
-            int idx = target.LastIndexOf('\\');
-            string parent = idx >= 0 ? target.Substring(0, idx) : "";
-            string last = idx >= 0 ? target.Substring(idx + 1) : target;
+            string last = Path.GetFileName(target);
+            string parent = Path.GetDirectoryName(target) ?? "";
 
-            if (!string.IsNullOrEmpty(last) && !string.IsNullOrEmpty(baseName) && last.Contains(baseName))
+            if (!string.IsNullOrEmpty(baseName) && !string.IsNullOrEmpty(last) && last.Contains(baseName))
             {
-                // 先去掉旧编号链（"微信 3 2"→"微信"），再整段替换基础名。
-                // 顺序不能反：若先替换成新显示名"微信 1"再去尾，会把新名字自带的编号也删掉（退回"微信"）
-                last = Regex.Replace(last, @"(?:\s\d+)+$", "").Replace(baseName, newName);
+                last = RenumberSegment(last, baseName, newName);
+            }
+            else if (!string.IsNullOrEmpty(baseName) &&
+                     !string.IsNullOrEmpty(Path.GetFileName(parent)) &&
+                     Path.GetFileName(parent).Contains(baseName))
+            {
+                // 新布局：程序名在倒数第二段，规则名子目录保持原样
+                string grandParent = Path.GetDirectoryName(parent) ?? "";
+                string programSegment = RenumberSegment(Path.GetFileName(parent), baseName, newName);
+                parent = string.IsNullOrEmpty(grandParent)
+                    ? programSegment
+                    : Path.Combine(grandParent, programSegment);
             }
             else
+            {
                 last = last + " " + number;
-            if (!string.IsNullOrEmpty(parent) && !string.IsNullOrEmpty(baseName) && parent.Contains(baseName))
-                parent = parent.Replace(baseName, newName);
-            return string.IsNullOrEmpty(parent) ? last : parent + Path.DirectorySeparatorChar + last;
+            }
+
+            return string.IsNullOrEmpty(parent) ? last : Path.Combine(parent, last);
         }
+
+        /// <summary>去掉段末已有的编号链（"微信 3 2"→"微信"）后整段替换基础名。顺序不能反，否则新名字自带的编号会被当成旧编号删掉。</summary>
+        private static string RenumberSegment(string segment, string baseName, string newName) =>
+            Regex.Replace(segment, @"(?:\s\d+)+$", "").Replace(baseName, newName);
 
         /// <summary>一键添加指令（文档 5.1.2）。allowEmptyRules=true 用于批量确认后仍继续。</summary>
         public void ApplyInstruction(ProgramEntry p, bool allowEmptyRules = false)
@@ -1380,12 +1411,58 @@ namespace PathwinderMgt.Services
                 }
             }
 
+            // 多进程程序（Electron / Chromium 系）的子进程 exe 常放在安装目录的子目录里（如
+            // 百度网盘的 module\BrowserEngine）。Hookshot 要求子进程 exe 所在目录也有 .hookshot
+            // 才会注入；缺失时子进程不受重定向影响，数据会写回原路径（表现为“明明重定向了还是创建了”）。
+            TryAuthorizeChildDirectories(exeDir);
+
             // 基于历史 Hookshot 日志，为上轮运行中被拒的子进程补授权（补后下次启动生效），并清理桌面日志
             var sync = ChildProcessAuth.SyncAll(_cfg.Programs, Log);
             if (sync.Added > 0)
                 Log.Info($"已为 {sync.Added} 个子进程补 Hookshot 授权，下次经快捷方式启动时生效");
             if (sync.Failed.Count > 0)
                 Log.Warn($"以下子进程目录受保护，授权文件需手动创建：{string.Join("、", sync.Failed)}");
+        }
+
+        /// <summary>
+        /// 为安装目录下所有包含 exe 的子目录补目录级 Hookshot 授权（.hookshot）。
+        /// 安装根目录的授权由 <see cref="TryCreateAuthFile"/> 处理，这里只覆盖子目录；
+        /// 目录不可写时仅告警，不影响主进程授权。
+        /// </summary>
+        private void TryAuthorizeChildDirectories(string installRoot)
+        {
+            if (string.IsNullOrEmpty(installRoot) || !Directory.Exists(installRoot)) return;
+            int created = 0;
+            try
+            {
+                var childDirectories = Directory
+                    .EnumerateFiles(installRoot, "*.exe", SearchOption.AllDirectories)
+                    .Select(Path.GetDirectoryName)
+                    .Where(dir => !string.IsNullOrEmpty(dir) &&
+                                  !string.Equals(dir, installRoot, StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase);
+
+                foreach (string dir in childDirectories)
+                {
+                    string authFile = Path.Combine(dir, ".hookshot");
+                    try
+                    {
+                        if (File.Exists(authFile)) continue;
+                        File.WriteAllText(authFile, "");
+                        created++;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warn($"无法创建子进程授权文件 {authFile}（目录可能受保护）：{ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"扫描子进程目录失败（不影响主进程授权）：{ex.Message}");
+            }
+            if (created > 0)
+                Log.Info($"已为 {created} 个子进程目录补 Hookshot 授权，下次经快捷方式启动时生效");
         }
 
         /// <summary>定位首个成对引号的起止索引；无成对引号时返回 false。供 Extract/StripFirstQuoted 共用。</summary>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -30,17 +31,28 @@ namespace PathwinderMgt.Views
         private bool _customEnabled;
         private readonly Func<string> _getProgramMode;
 
+        /// <summary>按规则名生成默认目标路径（数据根\程序名\规则名），由宿主提供。</summary>
+        private readonly Func<string, string> _getAutoTarget;
+
+        // 自动填充状态：记录最近一次由原始路径生成的值，用户手工改过就不再覆盖
+        private bool _loadingEdit;
+        private string _autoName;
+        private string _autoTargetValue;
+
         /// <summary>规则内容变化（保存）后触发，宿主负责落盘。</summary>
         public event EventHandler Changed;
 
         /// <param name="customEnabled">是否处于“自定义”模式（允许逐规则编辑模式）。</param>
         /// <param name="getProgramMode">取程序级当前模式（跟随显示/物化新规则用）。</param>
-        public RulesPanel(List<Rule> rules, bool customEnabled, Func<string> getProgramMode)
+        /// <param name="getAutoTarget">按规则名生成默认目标路径（程序数据根\规则名）。</param>
+        public RulesPanel(List<Rule> rules, bool customEnabled, Func<string> getProgramMode,
+                          Func<string, string> getAutoTarget)
         {
             InitializeComponent();
             _rules = rules;
             _customEnabled = customEnabled;
             _getProgramMode = getProgramMode;
+            _getAutoTarget = getAutoTarget;
             CmbRuleMode.IsEnabled = customEnabled;
             CmbRuleMode.SelectedIndex = ModeToIndex(getProgramMode());
             LvRules.ItemsSource = Rows;
@@ -96,6 +108,7 @@ namespace PathwinderMgt.Views
 
         private void LoadEdit(RuleVM vm)
         {
+            _loadingEdit = true;
             _current = vm;
             TxtName.Text = vm.Source.Name;
             TxtOrigin.Text = vm.Source.OriginDirectory;
@@ -104,6 +117,47 @@ namespace PathwinderMgt.Views
             CmbRuleMode.SelectedIndex = ModeToIndex(
                 _customEnabled ? vm.Source.RedirectMode ?? _getProgramMode()
                                : _getProgramMode());
+            _loadingEdit = false;
+            // 已有规则的内容视为用户值，输入原始路径时不再自动覆盖
+            _autoName = null;
+            _autoTargetValue = null;
+        }
+
+        /// <summary>
+        /// 原始路径优先输入时自动补规则名与目标路径：规则名取路径最后一级，
+        /// 目标路径 = 程序数据根\规则名。仅当对应字段为空或仍是上次自动生成的值时覆盖，
+        /// 避免冲掉用户手工修改。
+        /// </summary>
+        private void ApplyAutoFillFromOrigin()
+        {
+            string origin = TxtOrigin.Text.Trim();
+            if (origin.Length == 0) return;
+
+            string derivedName = ConfigManager.RuleNameFromOrigin(origin, null);
+            if (string.IsNullOrEmpty(derivedName)) return;
+
+            string currentName = TxtName.Text.Trim();
+            if (currentName.Length == 0 || currentName == _autoName)
+            {
+                TxtName.Text = derivedName;
+                _autoName = derivedName;
+            }
+
+            string autoTarget = _getAutoTarget?.Invoke(derivedName);
+            if (string.IsNullOrEmpty(autoTarget)) return;
+
+            string currentTarget = TxtTarget.Text.Trim();
+            if (currentTarget.Length == 0 || currentTarget == _autoTargetValue)
+            {
+                TxtTarget.Text = autoTarget;
+                _autoTargetValue = autoTarget;
+            }
+        }
+
+        private void TxtOrigin_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_loadingEdit) return;
+            ApplyAutoFillFromOrigin();
         }
 
         private void BtnAdd_Click(object sender, RoutedEventArgs e)
@@ -120,6 +174,9 @@ namespace PathwinderMgt.Views
             var vm = new RuleVM(r);
             Rows.Add(vm);
             LvRules.SelectedItem = vm;
+            // 草稿的占位名视为自动值：随后输入原始路径时会被最后一级替换
+            _autoName = r.Name;
+            _autoTargetValue = "";
             TxtName.Focus();
             RefreshRulesColumns();
         }
@@ -162,6 +219,9 @@ namespace PathwinderMgt.Views
                 return;
             }
 
+            // 兜底：只填了原始路径就点保存时，自动补齐规则名与目标路径
+            ApplyAutoFillFromOrigin();
+
             var draft = new Rule
             {
                 Name = TxtName.Text.Trim(),
@@ -178,6 +238,9 @@ namespace PathwinderMgt.Views
                 MessageBox.Show(err, Loc.T("L_Rules_Validate"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
+
+            // 自动填充只计算路径，这里在真正保存时再创建目标目录，避免输入过程中产生空目录
+            try { Directory.CreateDirectory(draft.TargetDirectory); } catch { }
 
             if (isNew)
             {

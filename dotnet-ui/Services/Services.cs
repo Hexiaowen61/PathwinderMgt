@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using PathwinderMgt.Models;
 
 namespace PathwinderMgt.Services
@@ -692,6 +696,99 @@ namespace PathwinderMgt.Services
             foreach (char c in name)
                 sb.Append(Array.IndexOf(InvalidSectionChars, c) >= 0 ? '_' : c);
             return sb.ToString();
+        }
+    }
+
+    // ===================== 检查更新（GitHub Releases）=====================
+
+    /// <summary>GitHub 最新 Release 信息；Version 为 null 表示 tag 无法解析成版本号。</summary>
+    public sealed class UpdateInfo
+    {
+        public string Tag { get; init; }
+        public string Notes { get; init; }
+        public string PageUrl { get; init; }
+        public Version Version { get; init; }
+    }
+
+    /// <summary>
+    /// 查询 GitHub 最新 Release 并解析版本号。手动「检查更新」与每日首次启动的静默检查共用，
+    /// 保证两处使用同一套接口、回退逻辑与版本比较口径。
+    /// </summary>
+    public static class UpdateChecker
+    {
+        public const string ReleasesPageUrl = "https://github.com/Hexiaowen61/PathwinderMgt/releases";
+        private const string ReleasesApiUrl = "https://api.github.com/repos/Hexiaowen61/PathwinderMgt/releases/latest";
+        private const string ReleasesLatestUrl = "https://github.com/Hexiaowen61/PathwinderMgt/releases/latest";
+
+        /// <summary>当前运行的管理器版本（忽略第四段修订号，与 Release tag 口径一致）。</summary>
+        public static Version CurrentVersion { get; } = GetCurrentVersion();
+
+        private static Version GetCurrentVersion()
+        {
+            var v = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+            return new Version(v.Major, v.Minor, Math.Max(v.Build, 0));
+        }
+
+        /// <summary>
+        /// 先走 GitHub API（可获得更新说明）；接口限流或不可用时，回退到 releases/latest 的重定向地址
+        /// （不消耗 API 配额）。无法获得有效 tag 时返回 null。
+        /// </summary>
+        public static async Task<UpdateInfo> FetchLatestAsync()
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("PathwinderMgt");
+
+            try
+            {
+                using var response = await http.GetAsync(ReleasesApiUrl);
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    var root = doc.RootElement;
+                    string tag = root.TryGetProperty("tag_name", out var tagNode) ? tagNode.GetString() : null;
+                    string body = root.TryGetProperty("body", out var bodyNode) ? bodyNode.GetString() ?? string.Empty : string.Empty;
+                    string pageUrl = root.TryGetProperty("html_url", out var urlNode) && !string.IsNullOrWhiteSpace(urlNode.GetString())
+                        ? urlNode.GetString() : ReleasesPageUrl;
+                    if (!string.IsNullOrWhiteSpace(tag))
+                        return new UpdateInfo { Tag = tag, Notes = body, PageUrl = pageUrl, Version = ParseVersion(tag) };
+                }
+            }
+            catch
+            {
+                // API 不可用（限流、被墙等），继续尝试下面的回退方案
+            }
+
+            using var pageResponse = await http.GetAsync(ReleasesLatestUrl);
+            string finalUrl = pageResponse.RequestMessage?.RequestUri?.AbsoluteUri;
+            if (!string.IsNullOrEmpty(finalUrl))
+            {
+                var match = Regex.Match(finalUrl, @"/releases/tag/([^/?#]+)");
+                if (match.Success)
+                {
+                    string tag = Uri.UnescapeDataString(match.Groups[1].Value);
+                    return new UpdateInfo
+                    {
+                        Tag = tag,
+                        Notes = string.Empty,
+                        PageUrl = finalUrl,
+                        Version = ParseVersion(tag)
+                    };
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>把 "v1.0.3" 之类的 Release tag 解析成 Version；无法解析时返回 null。</summary>
+        public static Version ParseVersion(string tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag)) return null;
+            var m = Regex.Match(tag, @"(\d+)\s*\.\s*(\d+)(?:\s*\.\s*(\d+))?");
+            if (!m.Success) return null;
+            int major = int.Parse(m.Groups[1].Value);
+            int minor = int.Parse(m.Groups[2].Value);
+            int build = m.Groups[3].Success ? int.Parse(m.Groups[3].Value) : 0;
+            return new Version(major, minor, build);
         }
     }
 
